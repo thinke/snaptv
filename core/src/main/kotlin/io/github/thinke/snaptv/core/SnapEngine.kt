@@ -12,7 +12,6 @@ import io.github.thinke.snaptv.core.protocol.ServerSettingsMessage
 import io.github.thinke.snaptv.core.protocol.TimeMessage
 import io.github.thinke.snaptv.core.protocol.UnknownMessage
 import io.github.thinke.snaptv.core.protocol.WireChunk
-import io.github.thinke.snaptv.core.sync.PcmChunk
 import io.github.thinke.snaptv.core.sync.SyncBuffer
 import io.github.thinke.snaptv.core.sync.SyncStats
 import io.github.thinke.snaptv.core.sync.TimeSync
@@ -182,6 +181,7 @@ class SnapEngine(
         send(MessageType.HELLO, MessageWriter.jsonPayload(helloJson()))
         val timeThread = Thread({ timeLoop(s) }, "snap-time").apply { isDaemon = true; start() }
         var decoder: Decoder? = null
+        var placer: ChunkPlacer? = null
         try {
             val input = DataInputStream(BufferedInputStream(s.getInputStream(), 64 * 1024))
             while (running && !s.isClosed) {
@@ -189,6 +189,7 @@ class SnapEngine(
                     is CodecHeader -> {
                         decoder?.close()
                         decoder = null
+                        placer = null
                         val d = decoders.create(msg.codec)
                         val format = try {
                             d.setHeader(msg.payload)
@@ -197,19 +198,15 @@ class SnapEngine(
                             throw e
                         }
                         decoder = d
+                        placer = ChunkPlacer(d, format)
                         buffer = SyncBuffer(format)
                         listener.onFormat(format, msg.codec)
                     }
                     is WireChunk -> {
-                        val d = decoder ?: continue
+                        val p = placer ?: continue
                         val b = buffer ?: continue
-                        val pcm = try {
-                            d.decode(msg.payload)
-                        } catch (e: Exception) {
-                            continue // one corrupt chunk: skip it, the sync buffer pads the gap
-                        }
-                        val startUs = Decoder.chunkStartUs(msg.timestampUs, d.carriedFrames, b.format.rate)
-                        b.add(PcmChunk(startUs, pcm, b.format.channels))
+                        // A decoder that keeps failing ends the session, so it shows as Failed.
+                        p.place(msg.timestampUs, msg.payload)?.let(b::add)
                     }
                     is ServerSettingsMessage -> {
                         val o = Json.parseToJsonElement(msg.json).jsonObject

@@ -7,9 +7,17 @@ package io.github.thinke.snaptv.core.codec
  * Every input of a chunk is queued with [beginChunk]'s presentation time; output buffers come
  * back carrying the presentation time of the chunk they were decoded from. Whatever has come
  * out when the chunk is finished is returned by [finish], and [carriedFrames] counts the frames
- * at its start that came from earlier chunks. Because snapserver's chunk timestamps are
+ * at its start that came from earlier chunks. While snapserver's chunk timestamps are
  * contiguous (each one is the previous plus its duration), moving the current chunk's
- * timestamp back by that many frames gives the time of the first returned frame exactly.
+ * timestamp back by that many frames gives the time of the first returned frame. They are not
+ * contiguous across a source restart; [io.github.thinke.snaptv.core.ChunkPlacer] then drops the
+ * carried audio.
+ *
+ * One inexactness remains for Vorbis, shared with snapclient: a fresh decoder outputs nothing
+ * for its first packet, so the first chunk after a (re)start is short by that packet (a quarter
+ * of the previous plus a quarter of its own block size, 3 to 21 ms at 48 kHz) and is played that
+ * much early. The sync buffer absorbs the jump at the next chunk. Correcting it would need the
+ * previous page's last block size, which a client joining mid-stream never sees.
  *
  * Presentation times are spaced [SPACING_US] apart so a codec that interpolates timestamps
  * within a buffer still maps back to the right chunk.

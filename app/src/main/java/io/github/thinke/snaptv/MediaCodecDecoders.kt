@@ -123,7 +123,7 @@ abstract class MediaCodecDecoder(private val mime: String) : Decoder {
 
     /** Queues [packets] as one chunk and returns the PCM the codec has released so far. */
     protected fun decodePackets(packets: List<ByteArray>): ShortArray {
-        val c = codec ?: start() // re-created after an error; the stream resumes at the next chunk
+        val c = codec ?: start() // re-created after an error; ChunkPlacer gives up if that keeps failing
         val pts = output.beginChunk()
         try {
             for (p in packets) queue(c, p, pts)

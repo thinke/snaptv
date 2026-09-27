@@ -60,7 +60,11 @@ cli/build/install/cli/bin/cli <server> [--seconds 10] [--wav out.wav] [--play]
   there *Start when the TV boots* has no effect and playback starts when the app is opened.
 - Output is 16-bit. 24/32-bit streams are down-converted.
 - Opus and Vorbis depend on the TV's MediaCodec decoders. If a decoder falls over mid-stream
-  it is restarted at the next chunk, which costs a short gap. Opus is decoded without
+  it is restarted at the next chunk, which costs a short gap; if it keeps failing, the
+  connection shows as failed with the decoder's error and is retried.
+- With Vorbis, the first chunk after connecting or a stream change plays up to about 21 ms
+  early (the decoder outputs nothing for its first packet), as with snapclient. The sync
+  buffer then corrects it. Opus is decoded without
   pre-skip, exactly as snapclient does, so it stays in step with snapclient rooms.
 - Stream and group names from the JSON-RPC control API are not shown yet.
 
