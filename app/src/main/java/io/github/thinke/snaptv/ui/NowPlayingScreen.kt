@@ -205,8 +205,8 @@ private fun statusLine(s: PlayerState): String {
     s.serverError?.let { return "Server error: $it" }
     return when (val c = s.connection) {
         ConnectionState.Stopped -> "Stopped"
-        is ConnectionState.Connecting -> "Connecting to ${c.host}…"
-        is ConnectionState.Failed -> if (c.host.isEmpty()) "${c.reason}. Still looking…" else "Can't reach ${c.host}: ${c.reason}. Retrying…"
+        is ConnectionState.Connecting -> "Connecting to ${s.serverLabel(c.host)}…"
+        is ConnectionState.Failed -> if (c.host.isEmpty()) "${c.reason}. Still looking…" else "Can't reach ${s.serverLabel(c.host)}: ${c.reason}. Retrying…"
         is ConnectionState.Connected -> {
             // The server buffer must cover this device's output delay plus the network.
             if (s.outputBufferMs > 0 && s.outputBufferMs > s.server.bufferMs - 80) {
@@ -216,8 +216,8 @@ private fun statusLine(s: PlayerState): String {
             when {
                 // The address only matters when something is wrong; Settings shows it.
                 s.audible -> "Playing$fmt"
-                s.sync?.playing == true -> "Connected to ${c.host} · waiting for sound"
-                else -> "Connected to ${c.host} · buffering"
+                s.sync?.playing == true -> "Connected to ${s.serverLabel(c.host)} · waiting for sound"
+                else -> "Connected to ${s.serverLabel(c.host)} · buffering"
             }
         }
     }

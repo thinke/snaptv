@@ -58,6 +58,7 @@ class Player(context: Context, private val prefs: Prefs) {
     fun changeVolume(delta: Int) = session.changeVolume(delta)
     fun setStream(streamId: String) = session.setStream(streamId)
     fun setName(name: String) = session.setName(name)
+    fun serverLabel(host: String) = session.serverLabel(host)
     fun setAudioDelay(ms: Int) = session.setAudioDelay(ms)
     fun adjustAudioDelay(stepMs: Int) = session.adjustAudioDelay(stepMs)
 

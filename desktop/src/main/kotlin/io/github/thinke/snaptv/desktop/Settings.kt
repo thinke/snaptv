@@ -101,7 +101,7 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
                 } catch (e: IllegalArgumentException) { e.message ?: "not a valid address" }
             }
             Text(
-                if (settings.serverHost.isBlank()) "Automatic (mDNS)" + (session.serverHost?.let { " · found $it" } ?: "")
+                if (settings.serverHost.isBlank()) "Automatic (mDNS)" + (session.serverHost?.let { " · found " + nameAndAddress(session.serverLabel(it), it) } ?: "")
                 else settings.serverHost + if ("://" !in settings.serverHost) ":${settings.serverPort}" else "",
                 color = Color.White.copy(alpha = 0.8f),
             )
@@ -260,3 +260,6 @@ fun UpdatePrompt(updater: DesktopUpdater, state: UpdateState, onClose: () -> Uni
     }
 }
 
+
+/** "steambox (fd3a::1)", or just the address while the name is unknown. */
+internal fun nameAndAddress(label: String, host: String) = if (label == host) host else "$label ($host)"

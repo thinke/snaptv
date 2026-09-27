@@ -105,7 +105,8 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     }
     if (picker) {
         ServerPicker(
-            servers = servers.map { "${it.name} (${it.host})" to it },
+            // mDNS names are usually just "Snapcast"; the server's own name says more.
+            servers = servers.map { player.serverLabel(it.host).let { l -> if (l != it.host) "$l (${it.host})" else "${it.name} (${it.host})" } to it },
             current = settings.serverHost,
             onAuto = { prefs.update { s -> s.copy(serverHost = "", serverPort = 1704) }; picker = false },
             onPick = { host, port -> prefs.update { s -> s.copy(serverHost = host, serverPort = port) }; picker = false },
@@ -136,7 +137,7 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                     headlineContent = { Text("Server") },
                     supportingContent = {
                         Text(
-                            if (auto) "Automatic" + (found?.let { " · found ${it.host}" } ?: " · searching…")
+                            if (auto) "Automatic" + (found?.let { f -> " · found " + player.serverLabel(f.host).let { l -> if (l != f.host) "$l (${f.host})" else f.host } } ?: " · searching…")
                             else if ("://" in settings.serverHost) settings.serverHost
                             else "${settings.serverHost}:${settings.serverPort}"
                         )

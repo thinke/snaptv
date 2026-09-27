@@ -290,11 +290,11 @@ private fun status(s: PlayerState): String {
     s.serverError?.let { return "Server error: $it" }
     return when (val c = s.connection) {
         ConnectionState.Stopped -> "Starting…"
-        is ConnectionState.Connecting -> "Connecting to ${c.host}…"
-        is ConnectionState.Failed -> if (c.host.isEmpty()) "${c.reason}. Still looking…" else "Can't reach ${c.host}: ${c.reason}. Retrying…"
+        is ConnectionState.Connecting -> "Connecting to ${s.serverLabel(c.host)}…"
+        is ConnectionState.Failed -> if (c.host.isEmpty()) "${c.reason}. Still looking…" else "Can't reach ${s.serverLabel(c.host)}: ${c.reason}. Retrying…"
         is ConnectionState.Connected -> {
             val fmt = s.format?.let { " · ${it.rate / 1000.0} kHz ${s.codec?.uppercase()}" } ?: ""
-            if (s.audible) "Playing$fmt" else "Connected · waiting for sound"
+            if (s.audible) "Playing$fmt" else "Connected to ${s.serverLabel(c.host)} · waiting for sound"
         }
     }
 }

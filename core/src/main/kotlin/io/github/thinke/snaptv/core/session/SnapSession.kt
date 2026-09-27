@@ -52,7 +52,12 @@ data class PlayerState(
     val room: RoomInfo? = null,
     /** The decoder actually in use, e.g. "FFmpeg 6.0 (flac)". */
     val decoder: String? = null,
-)
+    /** The server's own name for itself (e.g. "steambox"), once known; show it rather than the address. */
+    val serverName: String? = null,
+) {
+    /** How to show the server: its name if we know it, else the address. */
+    fun serverLabel(host: String): String = serverName ?: host
+}
 
 /** The platform's audio output: AudioTrack on Android, PulseAudio/PipeWire on desktop. */
 interface AudioSink {
@@ -86,11 +91,17 @@ class SnapSession(
 
     val engine = SnapEngine(identity, object : SnapListener {
         override fun onState(state: ConnectionState) = _state.update {
+            val name = when (state) {
+                is ConnectionState.Connecting -> serverNames[state.host]
+                is ConnectionState.Connected -> serverNames[state.host]
+                is ConnectionState.Failed -> serverNames[state.host]
+                ConnectionState.Stopped -> null
+            }
             // Connected means the server took our Hello, so a previous auth refusal no longer applies.
             if (state is ConnectionState.Connected && it.authError != null) {
-                it.copy(connection = state, authError = null, serverError = null)
+                it.copy(connection = state, authError = null, serverError = null, serverName = name)
             } else {
-                it.copy(connection = state)
+                it.copy(connection = state, serverName = name)
             }
         }
         override fun onFormat(format: SampleFormat, codec: String) =
@@ -110,7 +121,20 @@ class SnapSession(
     }
 
     val output: AudioSink = sink(engine)
-    val control = ControlClient(prefs.clientId) { room -> _state.update { it.copy(room = room) } }
+    val control = ControlClient(prefs.clientId) { room ->
+        val name = room?.serverHostName?.takeIf { it.isNotBlank() }
+        serverHost?.let { host -> if (name != null) serverNames[host] = name }
+        _state.update { it.copy(room = room, serverName = name ?: it.serverName) }
+    }
+
+    // Addresses we've connected to → the name each server gave itself, for [serverLabel].
+    private val serverNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * How to show a server found at [host]: the name it reports for itself (the control API's
+     * host name, e.g. "steambox") once we've connected to it, else the address.
+     */
+    fun serverLabel(host: String): String = serverNames[host] ?: host
     private var sessionJob: Job? = null
 
     /** The server host we are connected to (for extras that need a second connection). */
