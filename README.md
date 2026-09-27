@@ -89,4 +89,13 @@ the same values from the environment (`SNAPTV_KEYSTORE` is a path).
 
 ## License
 
-GPL-3.0-or-later, the same as Snapcast.
+Copyright © 2026 Jyri Loukola
+
+SnapTV is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of
+the License, or (at your option) any later version. It is distributed in the hope that it will
+be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+SnapTV is an independent client for [Snapcast](https://github.com/badaix/snapcast) and is not
+affiliated with the Snapcast project.
