@@ -46,6 +46,13 @@ table below with every such change.
 | Send mode: be the source (PipeWire output → snapserver tcp input, paced by the monotonic clock) | n/a | ✅ | Linux only by design; `SourceMode.kt`, one mode at a time (`desktopMode`) |
 | Hidden: sync test through snapcast | ⏸ | ⏸ | parked; `SHOW_SNAPCAST_SYNC_TEST` |
 
+## Visualizers on TVs
+
+TV CPUs are slow and Skia cuts anti-aliased fills and strokes wider than a pixel into triangles
+on the CPU every frame (Ridges drawn that way ran at 23 fps on the TCL TV). Draw long shapes as
+fills with anti-aliasing off plus 1-pixel hairline paths, avoid big overlapping gradients, and
+time new styles on the TV with the bench build (`dumpsys gfxinfo io.github.thinke.snaptv.bench`).
+
 ## Building
 
 System Java on the dev machine is a JRE only: use `JAVA_HOME=~/tools/jdk-21`.
@@ -54,6 +61,7 @@ System Java on the dev machine is a JRE only: use `JAVA_HOME=~/tools/jdk-21`.
 ./gradlew :core:test                         # unit tests
 ./gradlew :app:assembleDebug                 # Android debug APK
 ./gradlew :desktop:renderVisuals -Pout=DIR   # every visualizer style as PNGs, from a made-up song
+./gradlew :app:assembleBench                 # release code as io.github.thinke.snaptv.bench: times one visualizer on a device (VisualBenchActivity)
 ANDROID_SERIAL=emulator-5556 ./gradlew :app:connectedDebugAndroidTest   # on one device only
 ./gradlew :desktop:run --args="--server HOST --windowed"   # also --mode source --source-port N --sink NAME (not saved)
 desktop/packaging/make-appimage.sh           # SnapTV-Desktop-x86_64.AppImage (needs appimagetool)

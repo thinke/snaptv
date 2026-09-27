@@ -39,6 +39,15 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        // Release code (minified, not debuggable) under its own ID, with just the visualizer
+        // benchmark (src/bench): installs next to the real app to time styles on a device.
+        create("bench") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".bench"
+            versionNameSuffix = "-bench"
+            matchingFallbacks += "release"
+        }
     }
 
     compileOptions {

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The "bench" build: release code under its own app ID, with only the visualizer benchmark.
+     No launcher tile, screensaver or start on boot, so it never plays or gets in the way. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity android:name=".ui.MainActivity" tools:node="remove" />
+        <service android:name=".VisualizerDream" tools:node="remove" />
+        <receiver android:name=".BootReceiver" tools:node="remove" />
+
+        <activity
+            android:name=".bench.VisualBenchActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape" />
+    </application>
+</manifest>

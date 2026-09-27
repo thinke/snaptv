@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import io.github.thinke.snaptv.core.visual.Spectrum
 import io.github.thinke.snaptv.core.visual.VisualBuffer
 import kotlin.math.PI
@@ -74,11 +73,11 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
         when (style) {
             VisualStyle.Bars -> drawBars(spectrum, time)
             VisualStyle.Halo -> drawHalo(spectrum, time)
-            VisualStyle.Scope -> drawScope(samples, spectrum, path, time)
-            VisualStyle.Ridges -> drawRidges(scene, spectrum, path, time)
+            VisualStyle.Scope -> drawScope(scene, samples, spectrum, path, time)
+            VisualStyle.Ridges -> drawRidges(scene, spectrum, time)
             VisualStyle.Starfield -> drawStarfield(scene, spectrum, time)
             VisualStyle.Pulse -> drawPulse(scene, spectrum, time)
-            VisualStyle.Liquid -> drawLiquid(spectrum, path, time)
+            VisualStyle.Liquid -> drawLiquid(scene, spectrum, path, time)
         }
     }
 }
@@ -151,26 +150,4 @@ private fun DrawScope.drawHalo(s: Spectrum, time: Float) {
             cap = StrokeCap.Round,
         )
     }
-}
-
-private fun DrawScope.drawScope(samples: FloatArray, s: Spectrum, path: Path, time: Float) {
-    // Normalise gently so quiet music still draws a visible line, without blowing up hiss.
-    var peak = 0.05f
-    for (v in samples) peak = max(peak, kotlin.math.abs(v))
-    val gain = min(1f / peak, 8f) * 0.8f
-    val points = min(samples.size, (size.width / 3).toInt())
-    val step = samples.size.toFloat() / points
-    val mid = size.height / 2
-    val amp = size.height * 0.32f
-    path.reset()
-    for (p in 0 until points) {
-        val v = samples[(p * step).toInt()] * gain
-        val x = p * size.width / (points - 1)
-        val y = mid - v * amp
-        if (p == 0) path.moveTo(x, y) else path.lineTo(x, y)
-    }
-    val color = palette(0.2f + 0.6f * s.loudness, time)
-    drawPath(path, color.copy(alpha = 0.07f), style = Stroke(width = 18f, cap = StrokeCap.Round))
-    drawPath(path, color.copy(alpha = 0.22f), style = Stroke(width = 7f, cap = StrokeCap.Round))
-    drawPath(path, color, style = Stroke(width = 2.5f, cap = StrokeCap.Round))
 }

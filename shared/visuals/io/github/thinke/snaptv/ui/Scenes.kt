@@ -3,9 +3,11 @@ package io.github.thinke.snaptv.ui
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import io.github.thinke.snaptv.core.visual.Spectrum
@@ -35,8 +37,12 @@ internal class Scene(private val bands: Int) {
     private var energyAverage = 0f
     private var sinceBeat = 1f
 
-    /** For Ridges: the ridge line alone (the fill path also closes along the ground). */
-    val line = Path()
+    /** Ridges' per-row scratch: the ground outline, the ridge line and their paints. */
+    val ridgeFill = Path()
+    val ridgeLine = Path()
+    val ridgePaint = Paint().apply { style = PaintingStyle.Stroke; strokeWidth = 0f; isAntiAlias = true } // hairline
+    val ridgeGround = Paint().apply { isAntiAlias = false }
+    val liquidFill = Paint().apply { isAntiAlias = false }
 
     val ringRadius = FloatArray(MAX_RINGS)
     val ringHue = FloatArray(MAX_RINGS)
@@ -136,39 +142,63 @@ internal class Scene(private val bands: Int) {
     }
 }
 
-/** A scrolling landscape of the last second of spectra, lows in the middle (Unknown Pleasures style). */
-internal fun DrawScope.drawRidges(scene: Scene, s: Spectrum, path: Path, time: Float) {
+/**
+ * A scrolling landscape of the last second of spectra across the whole screen, lows in the
+ * middle (Unknown Pleasures style).
+ *
+ * Drawn to suit slow TV CPUs, where Skia cuts anti-aliased fills and any stroke wider than a
+ * pixel into triangles on the CPU every frame (measured on a TCL TV: ~23 fps drawn that way).
+ * Here each row's ground is one fill with anti-aliasing off and each line a 1-pixel hairline
+ * path, both of which the GPU draws directly; the line hides the fill's rough edge. Front
+ * rows get a second hairline a pixel lower to look bolder.
+ */
+internal fun DrawScope.drawRidges(scene: Scene, s: Spectrum, time: Float) {
     val n = s.bands
     val rows = Scene.RIDGE_ROWS
-    val top = size.height * 0.2f
-    val spacing = size.height * 0.62f / rows
-    val amp = size.height * 0.2f
-    val ground = Color(0xFF05060C)
-    for (k in 0 until rows) {
-        // Oldest first, at the back; each row hides what's behind it.
-        val levels = scene.history[(scene.head + 1 + k) % rows]
-        val depth = k / (rows - 1f)
-        val width = size.width * (0.45f + 0.4f * depth)
-        val left = (size.width - width) / 2
-        val base = top + k * spacing
-        path.reset()
-        val line = scene.line
-        line.reset()
-        val points = 2 * n
-        for (j in 0 until points) {
-            val band = if (j < n) n - 1 - j else j - n
-            // Taper to the edges, so each ridge rises out of flat ground.
-            val edge = sin(PI.toFloat() * j / (points - 1))
-            val x = left + j * width / (points - 1)
-            val y = base - levels[band] * amp * edge * edge * (0.5f + 0.5f * depth)
-            if (j == 0) { path.moveTo(x, y); line.moveTo(x, y) } else { path.lineTo(x, y); line.lineTo(x, y) }
+    val points = 2 * n
+    val top = size.height * 0.16f
+    val spacing = (size.height * 0.97f - top) / (rows - 1)
+    val amp = size.height * 0.24f
+    val step = size.width / (points - 1)
+    val fill = scene.ridgeFill
+    val line = scene.ridgeLine
+    // One ground colour for the whole landscape, from the back row to the bottom edge, so no
+    // stripes of the backdrop show between rows; the glow stays in the sky above.
+    val ground = scene.ridgeGround
+    ground.color = palette(0.5f, time, 0.5f, 0.075f)
+    drawIntoCanvas { canvas ->
+        canvas.drawRect(0f, top, size.width, size.height, ground)
+        for (k in 0 until rows) {
+            // Oldest first, at the back; each row hides most of what's behind it.
+            val levels = scene.history[(scene.head + 1 + k) % rows]
+            val depth = k / (rows - 1f)
+            val base = top + k * spacing
+            fill.reset()
+            line.reset()
+            for (j in 0 until points) {
+                val band = if (j < n) n - 1 - j else j - n
+                // Taper to the edges, so each ridge rises out of flat ground.
+                val edge = sin(PI.toFloat() * j / (points - 1))
+                val x = j * step
+                val y = base - levels[band] * amp * edge * edge * (0.55f + 0.45f * depth)
+                if (j == 0) { fill.moveTo(x, y); line.moveTo(x, y) } else { fill.lineTo(x, y); line.lineTo(x, y) }
+            }
+            // Down to this row's own ground line only: every line behind lies above it, and less
+            // area keeps the GPU inside the frame.
+            fill.lineTo(size.width, base + 1f)
+            fill.lineTo(0f, base + 1f)
+            fill.close()
+            canvas.drawPath(fill, ground)
+            val hue = 0.15f + 0.7f * depth
+            val paint = scene.ridgePaint
+            paint.color = palette(hue, time, 0.55f, 0.6f + 0.4f * depth).copy(alpha = 0.4f + 0.6f * depth)
+            canvas.drawPath(line, paint)
+            if (depth > 0.45f) {
+                canvas.translate(0f, 1.2f)
+                canvas.drawPath(line, paint)
+                canvas.translate(0f, -1.2f)
+            }
         }
-        path.lineTo(left + width, base + spacing * 2)
-        path.lineTo(left, base + spacing * 2)
-        path.close()
-        drawPath(path, ground)
-        val color = palette(0.15f + 0.7f * depth, time, 0.55f, 0.6f + 0.4f * depth)
-        drawPath(line, color.copy(alpha = 0.35f + 0.65f * depth), style = Stroke(width = 1.5f + 1.5f * depth, join = StrokeJoin.Round))
     }
 }
 
@@ -220,7 +250,9 @@ internal fun DrawScope.drawPulse(scene: Scene, s: Spectrum, time: Float) {
 }
 
 /** Layered soft blobs, pushed out of shape by the spectrum. */
-internal fun DrawScope.drawLiquid(s: Spectrum, path: Path, time: Float) {
+internal fun DrawScope.drawLiquid(scene: Scene, s: Spectrum, path: Path, time: Float) {
+    val fill = scene.liquidFill
+    val edge = scene.ridgePaint
     val center = Offset(size.width / 2, size.height / 2)
     val unit = min(size.width, size.height)
     val n = s.bands
@@ -242,7 +274,48 @@ internal fun DrawScope.drawLiquid(s: Spectrum, path: Path, time: Float) {
         }
         path.close()
         val color = palette(0.15f + 0.3f * layer + 0.2f * s.loudness, time, 0.7f, 1f)
-        drawPath(path, Brush.radialGradient(listOf(color.copy(alpha = 0.55f), color.copy(alpha = 0.12f)), center, base * 1.8f))
-        drawPath(path, color.copy(alpha = 0.7f), style = Stroke(width = 2f))
+        // As in Ridges: fill without anti-aliasing and a hairline edge, which the GPU draws
+        // directly (smooth fills and wider strokes are cut up on the CPU, too slow on TVs).
+        drawIntoCanvas { canvas ->
+            // Solid rather than a gradient: three overlapping gradient blobs overran the GPU.
+            fill.color = color.copy(alpha = 0.32f + 0.08f * layer)
+            canvas.drawPath(path, fill)
+            edge.color = color.copy(alpha = 0.8f)
+            canvas.drawPath(path, edge)
+        }
     }
 }
+
+/**
+ * The waveform. Its glow is a few fainter hairlines offset up and down rather than wide
+ * strokes: those are cut into triangles on the CPU every frame, too slow on TVs.
+ */
+internal fun DrawScope.drawScope(scene: Scene, samples: FloatArray, s: Spectrum, path: Path, time: Float) {
+    // Normalise gently so quiet music still draws a visible line, without blowing up hiss.
+    var peak = 0.05f
+    for (v in samples) peak = max(peak, kotlin.math.abs(v))
+    val gain = min(1f / peak, 8f) * 0.8f
+    val points = min(samples.size, (size.width / 5).toInt())
+    val step = samples.size.toFloat() / points
+    val mid = size.height / 2
+    val amp = size.height * 0.32f
+    path.reset()
+    for (p in 0 until points) {
+        val v = samples[(p * step).toInt()] * gain
+        val x = p * size.width / (points - 1)
+        val y = mid - v * amp
+        if (p == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    val color = palette(0.2f + 0.6f * s.loudness, time)
+    val paint = scene.ridgePaint
+    drawIntoCanvas { canvas ->
+        for ((offset, alpha) in SCOPE_GLOW) {
+            paint.color = color.copy(alpha = alpha)
+            canvas.translate(0f, offset)
+            canvas.drawPath(path, paint)
+            canvas.translate(0f, -offset)
+        }
+    }
+}
+
+private val SCOPE_GLOW = listOf(-6f to 0.05f, 6f to 0.05f, -3f to 0.12f, 3f to 0.12f, -1.2f to 0.5f, 1.2f to 0.5f, 0f to 1f)
