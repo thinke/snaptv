@@ -19,17 +19,43 @@ interface Decoder {
     /** Decode one chunk; the result length is a multiple of the channel count. */
     fun decode(payload: ByteArray): ShortArray
 
+    /**
+     * How many frames at the start of the last [decode] result belong to earlier chunks.
+     * Decoders with output latency (MediaCodec) hand audio back late; the chunk's timestamp is
+     * moved back by this much so it still marks the first returned frame, as snapclient's FLAC
+     * decoder does for frames libFLAC had cached.
+     */
+    val carriedFrames: Int get() = 0
+
+    /** Releases native resources; the decoder is not used afterwards. */
+    fun close() {}
+
     companion object {
+        /** The decoders that need nothing from the platform. */
         fun forCodec(codec: String): Decoder = when (codec) {
             "flac" -> FlacDecoder()
             "pcm" -> PcmDecoder()
             else -> throw UnsupportedCodecException(codec)
         }
+
+        /** Server time of the first frame of a decoded chunk stamped [timestampUs]. */
+        fun chunkStartUs(timestampUs: Long, carriedFrames: Int, rate: Int): Long =
+            timestampUs - carriedFrames * 1_000_000L / rate
+    }
+}
+
+/** Picks the decoder for a stream's codec, so the platform can add codecs core cannot decode. */
+fun interface DecoderFactory {
+    /** Throws [UnsupportedCodecException] for codecs it does not handle. */
+    fun create(codec: String): Decoder
+
+    companion object {
+        val Default = DecoderFactory { Decoder.forCodec(it) }
     }
 }
 
 class UnsupportedCodecException(val codec: String) :
-    Exception("codec '$codec' is not supported (use flac or pcm for this stream)")
+    Exception("codec '$codec' is not supported by this client")
 
 /** `pcm` codec: header is a RIFF WAVE header, chunks are raw little-endian samples. */
 class PcmDecoder : Decoder {

@@ -25,7 +25,7 @@ does not wrap the native snapclient binary.
 |---|---|---|
 | Binary protocol | `core/…/protocol` | Hello, Time, ServerSettings, CodecHeader, WireChunk, ClientInfo |
 | Clock sync | `core/…/sync/TimeSync.kt` | Median of `(c2s − s2c) / 2` over recent round trips |
-| Decoders | `core/…/codec` | FLAC (own decoder, checked against libFLAC's MD5) and PCM |
+| Decoders | `core/…/codec`, `app/…/MediaCodecDecoders.kt` | FLAC (own decoder, checked against libFLAC's MD5) and PCM in core; Opus and Ogg/Vorbis through Android's MediaCodec, with the Ogg demuxing and codec headers done in core |
 | Sync buffer | `core/…/sync/SyncBuffer.kt` | Sample-exact start, hard resync on jumps, ±500 ppm drift correction by dropping or duplicating single frames |
 | Audio output | `app/…/AudioOutput.kt` | AudioTrack. The DAC time of each block is extrapolated from `AudioTrack.getTimestamp`. |
 | Visualizer | `core/…/visual`, `app/…/ui/Visualizer.kt` | FFT spectrum; samples pulled at the time they are heard |
@@ -33,14 +33,15 @@ does not wrap the native snapclient binary.
 The `core` module has no Android dependencies, so it is unit tested on the JVM. The `cli`
 module is a desktop test client that exercises it against a real server.
 
-Codecs: `flac` and `pcm`. Streams using `opus` or `ogg` are reported as unsupported.
+Codecs: `flac`, `pcm`, `opus` and `ogg` (Vorbis) in the app. The desktop `cli` has no
+MediaCodec, so there `opus` and `ogg` are reported as unsupported.
 
 ## Building
 
 Requires JDK 17+ and the Android SDK (compileSdk 37).
 
 ```sh
-./gradlew :core:test            # protocol, FLAC and sync tests
+./gradlew :core:test            # protocol, codec and sync tests
 ./gradlew :app:assembleDebug    # app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -58,6 +59,9 @@ cli/build/install/cli/bin/cli <server> [--seconds 10] [--wav out.wav] [--play]
 - Android 15+ does not allow media playback services to start from `BOOT_COMPLETED`, so
   there *Start when the TV boots* has no effect and playback starts when the app is opened.
 - Output is 16-bit. 24/32-bit streams are down-converted.
+- Opus and Vorbis depend on the TV's MediaCodec decoders. If a decoder falls over mid-stream
+  it is restarted at the next chunk, which costs a short gap. Opus is decoded without
+  pre-skip, exactly as snapclient does, so it stays in step with snapclient rooms.
 - Stream and group names from the JSON-RPC control API are not shown yet.
 
 ## License

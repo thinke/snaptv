@@ -1,6 +1,7 @@
 package io.github.thinke.snaptv.core
 
 import io.github.thinke.snaptv.core.codec.Decoder
+import io.github.thinke.snaptv.core.codec.DecoderFactory
 import io.github.thinke.snaptv.core.codec.SampleFormat
 import io.github.thinke.snaptv.core.protocol.CodecHeader
 import io.github.thinke.snaptv.core.protocol.ErrorMessage
@@ -79,6 +80,7 @@ class SnapEngine(
     private val identity: ClientIdentity,
     private val listener: SnapListener,
     private val clock: MonotonicClock = MonotonicClock.System,
+    private val decoders: DecoderFactory = DecoderFactory.Default,
 ) {
     val timeSync = TimeSync()
 
@@ -179,14 +181,21 @@ class SnapEngine(
     private fun session(s: Socket) {
         send(MessageType.HELLO, MessageWriter.jsonPayload(helloJson()))
         val timeThread = Thread({ timeLoop(s) }, "snap-time").apply { isDaemon = true; start() }
+        var decoder: Decoder? = null
         try {
             val input = DataInputStream(BufferedInputStream(s.getInputStream(), 64 * 1024))
-            var decoder: Decoder? = null
             while (running && !s.isClosed) {
                 when (val msg = MessageReader.read(input, clock::nowUs)) {
                     is CodecHeader -> {
-                        val d = Decoder.forCodec(msg.codec)
-                        val format = d.setHeader(msg.payload)
+                        decoder?.close()
+                        decoder = null
+                        val d = decoders.create(msg.codec)
+                        val format = try {
+                            d.setHeader(msg.payload)
+                        } catch (e: Exception) {
+                            d.close()
+                            throw e
+                        }
                         decoder = d
                         buffer = SyncBuffer(format)
                         listener.onFormat(format, msg.codec)
@@ -199,7 +208,8 @@ class SnapEngine(
                         } catch (e: Exception) {
                             continue // one corrupt chunk: skip it, the sync buffer pads the gap
                         }
-                        b.add(PcmChunk(msg.timestampUs, pcm, b.format.channels))
+                        val startUs = Decoder.chunkStartUs(msg.timestampUs, d.carriedFrames, b.format.rate)
+                        b.add(PcmChunk(startUs, pcm, b.format.channels))
                     }
                     is ServerSettingsMessage -> {
                         val o = Json.parseToJsonElement(msg.json).jsonObject
@@ -223,6 +233,7 @@ class SnapEngine(
             }
         } finally {
             timeThread.interrupt()
+            decoder?.close()
         }
     }
 
