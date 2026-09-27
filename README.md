@@ -42,7 +42,7 @@ through PipeWire/PulseAudio and finds snapserver by itself (or `--server HOST`).
 ↑ ↓ volume, S settings, M next monitor, F11 full screen, Esc leave full screen. Closing the window
 keeps it playing from the system tray: the tray icon's menu shows the window again or quits;
 `--tray` starts it there. It updates itself from GitHub releases (Settings → Updates), and the
-AppImage carries update information for AppImageUpdate and Gear Lever too. Don't run it next to snapclient
+AppImage carries update information for AppImageUpdate and Gear Lever too. Starting it again while it runs just shows the running copy's window. Don't run it next to snapclient
 on the same machine, or that room plays twice.
 
 ### Send mode

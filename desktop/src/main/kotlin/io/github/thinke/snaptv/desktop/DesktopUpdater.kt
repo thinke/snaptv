@@ -35,7 +35,12 @@ sealed interface UpdateState {
  * (at most every 10 minutes) and daily. Installing downloads the new AppImage next to the running
  * one, checks it against the release's SHA-256, replaces the file and restarts.
  */
-class DesktopUpdater(private val prefs: Prefs, private val args: Array<String>, private val onRestart: () -> Unit) {
+class DesktopUpdater(
+    private val prefs: Prefs,
+    private val args: Array<String>,
+    /** Quit, and call relaunch on the way out to start the updated copy. */
+    private val onRestart: (relaunch: () -> Unit) -> Unit,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow<UpdateState>(if (appImage == null) UpdateState.NotAppImage else UpdateState.Idle)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
@@ -118,8 +123,13 @@ class DesktopUpdater(private val prefs: Prefs, private val args: Array<String>, 
                 tmp.setExecutable(true)
                 // Same directory, so the replace is atomic; the running copy stays open until exit.
                 Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                ProcessBuilder(listOf(target.absolutePath) + args.filter { it != "--windowed" }).inheritIO().start()
-                onRestart()
+                onRestart {
+                    val pb = ProcessBuilder(listOf(target.absolutePath) + args.filter { it != "--windowed" }).inheritIO()
+                    // Set by the Java launcher we run in. Inherited, it makes the new launcher skip
+                    // its setup and read our options as JVM options ("Unrecognized option: --tray").
+                    pb.environment().remove("_JPACKAGE_LAUNCHER")
+                    pb.start()
+                }
             } catch (e: Exception) {
                 _state.value = UpdateState.Failed("Update failed: ${e.message ?: e.javaClass.simpleName}", release)
             }

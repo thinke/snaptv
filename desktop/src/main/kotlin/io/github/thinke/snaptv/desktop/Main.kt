@@ -71,6 +71,11 @@ import javax.jmdns.JmDNS
  */
 fun main(args: Array<String>) {
     fun opt(name: String) = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
+    val instance = SingleInstance()
+    if (!instance.claim(args)) {
+        println("SnapTV Desktop is already running; showing its window.")
+        return
+    }
     val prefs = desktopPrefs()
     opt("--server")?.let { s -> prefs.update { it.copy(serverHost = s) } }
     opt("--monitor")?.toIntOrNull()?.let { m -> prefs.update { it.copy(monitor = m) } }
@@ -119,8 +124,8 @@ fun main(args: Array<String>) {
         }
     }
     applyMode(modeOverride ?: prefs.settings.value.desktopMode)
-    lateinit var exit: () -> Unit
-    val updater = DesktopUpdater(prefs, args) { exit() }
+    lateinit var restart: (relaunch: () -> Unit) -> Unit
+    val updater = DesktopUpdater(prefs, args) { relaunch -> restart(relaunch) }
     updater.startChecking()
 
     application {
@@ -145,7 +150,8 @@ fun main(args: Array<String>) {
             if (modeKey != applied) { applied = modeKey; applyMode(modeKey.first) }
         }
         val sending = (modeOverride ?: settings.desktopMode) == "source"
-        exit = quit
+        // After an update: stop, give up the single-instance socket, then start the new copy.
+        restart = { relaunch -> java.awt.EventQueue.invokeLater { notifierRef.stop(); source.stop(); session.stop(); instance.release(); relaunch(); exitApplication() } }
         val update by updater.state.collectAsState()
         var updateDismissed by remember { mutableStateOf(false) }
 
@@ -159,6 +165,8 @@ fun main(args: Array<String>) {
             )
         }
         notifierRef = notifier
+        // Started again from the menu (or a terminal): show this copy instead.
+        instance.onLaunch = { a -> java.awt.EventQueue.invokeLater { visible = true; if ("--settings" in a) settingsOpen = true } }
         val nativeTray = remember { notifier.start() }
         val statusLine = if (sending) sourceStatus(sourceState) else status(state)
         LaunchedEffect(visible, statusLine) { notifier.update(visible, statusLine) }
