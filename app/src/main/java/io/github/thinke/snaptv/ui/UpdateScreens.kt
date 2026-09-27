@@ -113,7 +113,7 @@ fun UpdatesScreen(updater: Updater, prefs: Prefs, onBack: () -> Unit) {
                     selected = false,
                     onClick = { prefs.update { it.copy(updateCheck = !it.updateCheck) } },
                     headlineContent = { Text("Check for updates automatically") },
-                    supportingContent = { Text("When SnapTV starts and once a day") },
+                    supportingContent = { Text("Whenever SnapTV is opened, and once a day while it runs") },
                     trailingContent = { Switch(checked = settings.updateCheck, onCheckedChange = null) },
                 )
             }

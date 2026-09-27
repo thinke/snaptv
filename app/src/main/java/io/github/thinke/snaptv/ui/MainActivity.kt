@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         // Back from the "install unknown apps" screen with the switch on: carry on installing.
         val pending = updater.state.value
         if (pending is UpdateState.NeedsPermission && packageManager.canRequestPackageInstalls()) updater.install(pending.release)
-        updater.checkIfDue()
+        updater.checkOnStart()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

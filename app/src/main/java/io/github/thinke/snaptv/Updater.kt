@@ -61,10 +61,15 @@ class Updater(private val context: Context, private val prefs: Prefs, private va
         }
     }
 
-    fun checkIfDue() {
-        val s = prefs.settings.value
-        if (!s.updateCheck) return
-        if (System.currentTimeMillis() - prefs.lastUpdateCheck < CHECK_INTERVAL_MS) return
+    /** Daily check while SnapTV keeps running. */
+    fun checkIfDue() = checkIfOlderThan(CHECK_INTERVAL_MS)
+
+    /** Every time the app is opened, unless we checked a few minutes ago. */
+    fun checkOnStart() = checkIfOlderThan(START_MIN_INTERVAL_MS)
+
+    private fun checkIfOlderThan(ms: Long) {
+        if (!prefs.settings.value.updateCheck) return
+        if (System.currentTimeMillis() - prefs.lastUpdateCheck < ms) return
         scope.launch { check() }
     }
 
@@ -226,6 +231,7 @@ class Updater(private val context: Context, private val prefs: Prefs, private va
     companion object {
         private const val TAG = "SnapTV.Update"
         private const val CHECK_INTERVAL_MS = 20 * 60 * 60 * 1000L
+        private const val START_MIN_INTERVAL_MS = 10 * 60 * 1000L
         @Volatile internal var instance: Updater? = null
     }
 }

@@ -26,7 +26,7 @@ Download `snaptv-<version>.apk` from [Releases](https://github.com/thinke/snaptv
 sideload it onto the TV with `adb install snaptv-<version>.apk`, or with a file-transfer app on
 the TV. Open SnapTV once. It finds snapserver on your network and starts playing.
 
-SnapTV checks GitHub for new releases when it starts and once a day, and offers to install
+SnapTV checks GitHub for new releases whenever it is opened and once a day, and offers to install
 them (Settings → Updates). Downloads are checked against the published SHA-256 and must be
 signed with the same key; Android asks before installing. The first time, Android also asks
 you to allow SnapTV to install apps.
@@ -87,6 +87,9 @@ the same values from the environment (`SNAPTV_KEYSTORE` is a path).
 
 - Android 15+ does not allow media playback services to start from `BOOT_COMPLETED`, so
   there *Start when the TV boots* has no effect and playback starts when the app is opened.
+- TCL TVs block apps from starting at boot or after an update until they are given TCL's
+  auto-start permission (in the TV's settings, often *Apps → Special app access → Auto-start*,
+  or `adb shell appops set io.github.thinke.snaptv APP_AUTO_START allow`).
 - Output is 16-bit. 24/32-bit streams are down-converted.
 - Opus and Vorbis depend on the TV's MediaCodec decoders. If a decoder falls over mid-stream
   it is restarted at the next chunk, which costs a short gap; if it keeps failing, the
