@@ -32,9 +32,9 @@ class ChirpPlan(val chirp: FloatArray, val atUs: List<Long>)
  */
 class Metronome(val sound: FloatArray, val periodUs: Long, val delayUs: () -> Long)
 
-class AudioOutput(private val engine: SnapEngine) {
+class AudioOutput(private val engine: SnapEngine) : io.github.thinke.snaptv.core.session.AudioSink {
     @Volatile private var running = false
-    @Volatile var gain: Float = 1f
+    @Volatile override var gain: Float = 1f
     @Volatile var calibration: ChirpPlan? = null
     @Volatile var metronome: Metronome? = null
 
@@ -44,16 +44,16 @@ class AudioOutput(private val engine: SnapEngine) {
     private var thread: Thread? = null
 
     /** How far behind "written" the DAC is, as last measured (ms); for the stats overlay. */
-    @Volatile var bufferedMs: Int = 0
+    @Volatile override var bufferedMs: Int = 0
         private set
 
-    fun start() {
+    override fun start() {
         if (running) return
         running = true
         thread = Thread({ loop() }, "snap-audio").apply { start() }
     }
 
-    fun stop() {
+    override fun stop() {
         running = false
         thread?.interrupt()
         thread?.join(1000)

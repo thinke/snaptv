@@ -1,4 +1,5 @@
 plugins {
+    `java-library`
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -16,5 +17,7 @@ kotlin {
 
 dependencies {
     implementation(libs.kotlinx.serialization.json)
+    // SnapSession and Prefs expose StateFlows to both apps.
+    api(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
 }

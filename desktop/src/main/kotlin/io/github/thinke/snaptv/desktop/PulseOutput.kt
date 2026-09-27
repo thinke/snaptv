@@ -48,20 +48,21 @@ private const val PA_SAMPLE_S16LE = 3
  * AudioTrack path: before each block we ask how long until newly written audio is heard
  * (pa_simple_get_latency) and render the samples due at that moment.
  */
-class PulseOutput(private val engine: SnapEngine, private val appName: String) {
+class PulseOutput(private val engine: SnapEngine, private val appName: String) : io.github.thinke.snaptv.core.session.AudioSink {
     @Volatile private var running = false
-    @Volatile var gain: Float = 1f
+    @Volatile override var gain: Float = 1f
     @Volatile var latencyMs: Int = 0
         private set
+    override val bufferedMs: Int get() = latencyMs
     private var thread: Thread? = null
 
-    fun start() {
+    override fun start() {
         if (running) return
         running = true
         thread = Thread({ loop() }, "pulse-output").apply { isDaemon = true; start() }
     }
 
-    fun stop() {
+    override fun stop() {
         running = false
         thread?.join(1000)
         thread = null

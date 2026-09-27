@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
+import androidx.compose.material.darkColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,6 +31,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,138 +42,119 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.thinke.snaptv.core.ClientIdentity
 import io.github.thinke.snaptv.core.ConnectionState
-import io.github.thinke.snaptv.core.ServerSettings
-import io.github.thinke.snaptv.core.SnapEngine
-import io.github.thinke.snaptv.core.SnapListener
-import io.github.thinke.snaptv.core.codec.SampleFormat
-import io.github.thinke.snaptv.core.control.ControlClient
-import io.github.thinke.snaptv.core.control.RoomInfo
-import io.github.thinke.snaptv.core.visual.VisualBuffer
+import io.github.thinke.snaptv.core.codec.DecoderFactory
+import io.github.thinke.snaptv.core.session.PlayerState
+import io.github.thinke.snaptv.core.session.SnapSession
+import io.github.thinke.snaptv.core.transport.Scheme
+import io.github.thinke.snaptv.core.transport.ServerAddress
 import io.github.thinke.snaptv.ui.VisualStyle
 import io.github.thinke.snaptv.ui.Visualizer
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.update
 import java.awt.GraphicsEnvironment
 import java.net.Inet4Address
 import java.net.InetAddress
-import java.util.prefs.Preferences
 import javax.jmdns.JmDNS
 
-data class DesktopState(
-    val connection: ConnectionState = ConnectionState.Stopped,
-    val format: SampleFormat? = null,
-    val server: ServerSettings = ServerSettings(),
-    val room: RoomInfo? = null,
-)
-
-private val prefs: Preferences = Preferences.userRoot().node("io/github/thinke/snaptv-desktop")
+const val VERSION = "0.1.0"
 
 /**
  * SnapTV Desktop: a Snapcast room with SnapTV's visualizer, full screen on the monitor you
- * choose. ← → style · ↑ ↓ volume · M next monitor · F11 full screen · Esc leave full screen.
+ * choose. The playback and control logic is core's [SnapSession], shared with the TV app.
  *
  *   snaptv-desktop [--server host] [--monitor N] [--windowed]
+ *
+ * Keys: ← → style · ↑ ↓ volume · S or Enter settings · M next monitor · F11 full screen · Esc back
  */
 fun main(args: Array<String>) {
     fun opt(name: String) = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
-    opt("--server")?.let { prefs.put("server", it) }
-    opt("--monitor")?.toIntOrNull()?.let { prefs.putInt("monitor", it) }
+    val prefs = desktopPrefs()
+    opt("--server")?.let { s -> prefs.update { it.copy(serverHost = s) } }
+    opt("--monitor")?.toIntOrNull()?.let { m -> prefs.update { it.copy(monitor = m) } }
+    if ("--windowed" in args) prefs.update { it.copy(fullscreen = false) }
 
     val host = InetAddress.getLocalHost().hostName.substringBefore('.')
-    val state = MutableStateFlow(DesktopState())
-    val visual = VisualBuffer()
-    val engine = SnapEngine(
-        ClientIdentity(
-            id = "snaptv-desktop-$host",
+    val session = SnapSession(
+        identity = ClientIdentity(
+            id = prefs.clientId,
             hostName = host,
             os = "${System.getProperty("os.name")} ${System.getProperty("os.version")}",
             arch = System.getProperty("os.arch"),
             clientName = "SnapTV Desktop",
+            version = VERSION,
         ),
-        object : SnapListener {
-            override fun onState(s: ConnectionState) = state.update { it.copy(connection = s) }
-            override fun onFormat(format: SampleFormat, codec: String) = state.update { it.copy(format = format) }
-            override fun onSettings(settings: ServerSettings) = state.update { it.copy(server = settings) }
-        },
-    ).also { it.tap = visual }
-    val output = PulseOutput(engine, "SnapTV Desktop")
-    val control = ControlClient("snaptv-desktop-$host") { room -> state.update { it.copy(room = room) } }
-
-    Thread({
-        val server = prefs.get("server", null)?.takeIf { it.isNotBlank() } ?: discover()
-        if (server == null) {
-            state.update { it.copy(connection = ConnectionState.Failed("", 0, "no snapserver found (use --server host)")) }
-            return@Thread
-        }
-        engine.start(server, 1704)
-        control.start(server)
-        output.start()
-    }, "snaptv-start").apply { isDaemon = true; start() }
+        prefs = prefs,
+        decoders = DecoderFactory.Default,
+        sink = { PulseOutput(it, "SnapTV Desktop") },
+        discover = { discover() },
+    )
+    session.setDecoderLabel("SnapTV (built-in)")
+    session.start()
 
     application {
-        val s by state.collectAsState()
-        // Perceptual volume, as on the TV.
-        output.gain = if (s.server.muted) 0f else (s.server.volume / 100f).let { it * it }
-
+        val state by session.state.collectAsState()
+        val settings by prefs.settings.collectAsState()
         val screens = remember { GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds } }
-        var monitor by remember { mutableIntStateOf(prefs.getInt("monitor", if (screens.size > 1) 1 else 0).coerceIn(0, screens.size - 1)) }
-        var fullscreen by remember { mutableStateOf(if ("--windowed" in args) false else prefs.getBoolean("fullscreen", true)) }
-        var style by remember { mutableIntStateOf(prefs.getInt("style", 0)) }
+        val monitor = (if (settings.monitor < 0) (if (screens.size > 1) 1 else 0) else settings.monitor).coerceIn(0, screens.size - 1)
+        var settingsOpen by remember { mutableStateOf(false) }
         var pokes by remember { mutableIntStateOf(0) }
 
-        val b = screens[monitor]
         val window = rememberWindowState(size = DpSize(1280.dp, 720.dp))
         // Move to the chosen monitor first, then go full screen there.
-        LaunchedEffect(monitor, fullscreen) {
+        LaunchedEffect(monitor, settings.fullscreen) {
+            val b = screens[monitor]
             window.placement = WindowPlacement.Floating
             window.position = WindowPosition(b.x.dp + 40.dp, b.y.dp + 40.dp)
             delay(150)
-            if (fullscreen) window.placement = WindowPlacement.Fullscreen
-            prefs.putInt("monitor", monitor)
-            prefs.putBoolean("fullscreen", fullscreen)
+            if (settings.fullscreen) window.placement = WindowPlacement.Fullscreen
         }
 
         Window(
-            onCloseRequest = { engine.stop(); control.stop(); output.stop(); exitApplication() },
+            onCloseRequest = { session.stop(); exitApplication() },
             state = window,
             title = "SnapTV",
             onPreviewKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown) return@Window false
-                when (e.key) {
-                    Key.DirectionRight -> { style++; prefs.putInt("style", style) }
-                    Key.DirectionLeft -> { style--; prefs.putInt("style", style) }
-                    Key.DirectionUp, Key.DirectionDown -> {
-                        // Applied at once and reported, so Snapweb shows it (as on the TV).
-                        val v = (s.server.volume + if (e.key == Key.DirectionUp) 5 else -5).coerceIn(0, 100)
-                        state.update { it.copy(server = it.server.copy(volume = v, muted = false)) }
-                        Thread { runCatching { engine.sendClientInfo(v, false) } }.start()
+                if (settingsOpen) {
+                    if (e.key == Key.Escape) { settingsOpen = false; true } else false
+                } else {
+                    when (e.key) {
+                        Key.DirectionRight -> prefs.update { it.copy(visualStyle = it.visualStyle + 1) }
+                        Key.DirectionLeft -> prefs.update { it.copy(visualStyle = it.visualStyle - 1) }
+                        Key.DirectionUp -> session.changeVolume(5)
+                        Key.DirectionDown -> session.changeVolume(-5)
+                        Key.S, Key.Enter -> settingsOpen = true
+                        Key.M -> prefs.update { it.copy(monitor = (monitor + 1) % screens.size) }
+                        Key.F11 -> prefs.update { it.copy(fullscreen = !it.fullscreen) }
+                        Key.Escape -> prefs.update { it.copy(fullscreen = false) }
+                        else -> return@Window false
                     }
-                    Key.M -> monitor = (monitor + 1) % screens.size
-                    Key.F11 -> fullscreen = !fullscreen
-                    Key.Escape -> fullscreen = false
-                    else -> return@Window false
+                    pokes++
+                    true
                 }
-                pokes++
-                true
             },
         ) {
-            NowPlaying(s, visual, VisualStyle.of(style), pokes, monitor, screens.size, output.latencyMs)
+            MaterialTheme(colors = darkColors(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
+                if (settingsOpen) {
+                    SettingsPanel(session, screens.size, monitor, onClose = { settingsOpen = false })
+                } else {
+                    NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size) { settingsOpen = true }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun NowPlaying(s: DesktopState, visual: VisualBuffer, style: VisualStyle, pokes: Int, monitor: Int, monitors: Int, latencyMs: Int) {
+private fun NowPlaying(session: SnapSession, s: PlayerState, style: VisualStyle, stats: Boolean, pokes: Int, monitor: Int, monitors: Int, openSettings: () -> Unit) {
     var overlay by remember { mutableStateOf(true) }
     LaunchedEffect(pokes) {
         overlay = true
         delay(5000)
         overlay = false
     }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        Visualizer(visual, style, Modifier.fillMaxSize())
-        AnimatedVisibility(overlay, enter = fadeIn(), exit = fadeOut()) {
+    Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = openSettings)) {
+        Visualizer(session.visual, style, Modifier.fillMaxSize())
+        AnimatedVisibility(overlay || !s.audible, enter = fadeIn(), exit = fadeOut()) {
             Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 32.dp)) {
                 Column(Modifier.align(Alignment.TopStart)) {
                     val track = s.room?.stream?.track
@@ -179,11 +165,21 @@ private fun NowPlaying(s: DesktopState, visual: VisualBuffer, style: VisualStyle
                 }
                 Row(Modifier.align(Alignment.BottomStart).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Hint("← →  ${style.label}")
-                    Hint("↑ ↓  volume ${if (s.server.muted) "muted" else "${s.server.volume}%"}")
+                    Hint("↑ ↓  volume ${SnapSession.volumeLabel(s.server)}")
                     Hint("M  monitor ${monitor + 1}/$monitors  ·  F11  full screen")
-                    Hint("output ${latencyMs} ms")
+                    Hint("S / click  settings")
                 }
             }
+        }
+        if (stats) {
+            Text(
+                statsText(s),
+                color = Color.White.copy(alpha = 0.8f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                modifier = Modifier.align(Alignment.TopEnd).padding(24.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(8.dp)).padding(12.dp),
+            )
         }
     }
 }
@@ -191,24 +187,47 @@ private fun NowPlaying(s: DesktopState, visual: VisualBuffer, style: VisualStyle
 @Composable
 private fun Hint(text: String) = Text(text, color = Color.White.copy(alpha = 0.55f), fontSize = 14.sp)
 
-private fun status(s: DesktopState): String = when (val c = s.connection) {
-    ConnectionState.Stopped -> "Starting…"
-    is ConnectionState.Connecting -> "Connecting to ${c.host}…"
-    is ConnectionState.Failed -> if (c.host.isEmpty()) c.reason else "Can't reach ${c.host}: ${c.reason}. Retrying…"
-    is ConnectionState.Connected -> "Connected" + (s.format?.let { " · ${it.rate / 1000.0} kHz" } ?: "")
+private fun status(s: PlayerState): String {
+    if (s.discovering) return "Looking for a snapserver on the network…"
+    s.serverError?.let { return "Server error: $it" }
+    return when (val c = s.connection) {
+        ConnectionState.Stopped -> "Starting…"
+        is ConnectionState.Connecting -> "Connecting to ${c.host}…"
+        is ConnectionState.Failed -> if (c.host.isEmpty()) "${c.reason}. Still looking…" else "Can't reach ${c.host}: ${c.reason}. Retrying…"
+        is ConnectionState.Connected -> {
+            val fmt = s.format?.let { " · ${it.rate / 1000.0} kHz ${s.codec?.uppercase()}" } ?: ""
+            if (s.audible) "Playing$fmt" else "Connected · waiting for sound"
+        }
+    }
+}
+
+fun statsText(s: PlayerState): String = buildString {
+    appendLine("clock offset  %.1f s".format(s.clockOffsetUs / 1e6))
+    appendLine("round trip    ${SnapSession.ms(s.rttUs)} ms")
+    appendLine("buffer        ${s.server.bufferMs} ms (+${s.server.latencyMs} delay)")
+    appendLine("output queue  ${s.outputBufferMs} ms")
+    s.decoder?.let { appendLine("decoder       $it") }
+    s.sync?.let { y ->
+        appendLine("sync error    ${SnapSession.ms(y.medianErrorUs)} ms (last ${SnapSession.ms(y.lastErrorUs)})")
+        appendLine("correction    ${y.correctionPpm} ppm")
+        appendLine("queued        ${y.queuedMs} ms")
+        append("resyncs ${y.hardSyncs}  underruns ${y.underruns}")
+    }
 }
 
 /** First snapserver announced over mDNS, by its IPv4 address. */
-private fun discover(): String? {
+private fun discover(): ServerAddress? {
     val addresses = java.net.NetworkInterface.getNetworkInterfaces().toList()
         .filter { it.isUp && !it.isLoopback }
         .flatMap { it.inetAddresses.toList() }
         .filterIsInstance<Inet4Address>()
     for (a in addresses) {
         val found = runCatching {
-            JmDNS.create(a).use { dns -> dns.list("_snapcast._tcp.local.", 4000).firstNotNullOfOrNull { it.inet4Addresses.firstOrNull()?.hostAddress } }
+            JmDNS.create(a).use { dns ->
+                dns.list("_snapcast._tcp.local.", 4000).firstNotNullOfOrNull { i -> i.inet4Addresses.firstOrNull()?.let { it.hostAddress to i.port } }
+            }
         }.getOrNull()
-        if (found != null) return found
+        if (found != null) return ServerAddress(Scheme.TCP, found.first, found.second)
     }
     return null
 }
