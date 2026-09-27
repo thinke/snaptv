@@ -128,6 +128,8 @@ fun main(args: Array<String>) {
         val nativeTray = remember { notifier.start() }
         val statusLine = status(state)
         LaunchedEffect(visible, statusLine) { notifier.update(visible, statusLine) }
+        // After hiding, give the freed window memory back instead of waiting for the next GC.
+        LaunchedEffect(visible) { if (!visible) { delay(2000); releaseMemory() } }
         if (!nativeTray) {
             Tray(
                 icon = trayIcon,
@@ -152,43 +154,46 @@ fun main(args: Array<String>) {
             if (settings.fullscreen) window.placement = WindowPlacement.Fullscreen
         }
 
-        Window(
-            onCloseRequest = { visible = false },
-            visible = visible,
-            state = window,
-            title = "SnapTV",
-            icon = icon,
-            onPreviewKeyEvent = { e ->
-                if (e.type != KeyEventType.KeyDown) return@Window false
-                if (settingsOpen) {
-                    if (e.key == Key.Escape) { settingsOpen = false; true } else false
-                } else {
-                    when (e.key) {
-                        Key.DirectionRight -> prefs.update { it.copy(visualStyle = it.visualStyle + 1) }
-                        Key.DirectionLeft -> prefs.update { it.copy(visualStyle = it.visualStyle - 1) }
-                        Key.DirectionUp -> session.changeVolume(5)
-                        Key.DirectionDown -> session.changeVolume(-5)
-                        Key.S, Key.Enter -> settingsOpen = true
-                        Key.M -> prefs.update { it.copy(monitor = (monitor + 1) % screens.size) }
-                        Key.F11 -> prefs.update { it.copy(fullscreen = !it.fullscreen) }
-                        Key.Escape -> prefs.update { it.copy(fullscreen = false) }
-                        else -> return@Window false
+        // Hidden to the tray means gone: disposing the window frees its Skia surfaces and GPU
+        // context (most of the idle memory); size and position live in `window` above.
+        if (visible) {
+            Window(
+                onCloseRequest = { visible = false },
+                state = window,
+                title = "SnapTV",
+                icon = icon,
+                onPreviewKeyEvent = { e ->
+                    if (e.type != KeyEventType.KeyDown) return@Window false
+                    if (settingsOpen) {
+                        if (e.key == Key.Escape) { settingsOpen = false; true } else false
+                    } else {
+                        when (e.key) {
+                            Key.DirectionRight -> prefs.update { it.copy(visualStyle = it.visualStyle + 1) }
+                            Key.DirectionLeft -> prefs.update { it.copy(visualStyle = it.visualStyle - 1) }
+                            Key.DirectionUp -> session.changeVolume(5)
+                            Key.DirectionDown -> session.changeVolume(-5)
+                            Key.S, Key.Enter -> settingsOpen = true
+                            Key.M -> prefs.update { it.copy(monitor = (monitor + 1) % screens.size) }
+                            Key.F11 -> prefs.update { it.copy(fullscreen = !it.fullscreen) }
+                            Key.Escape -> prefs.update { it.copy(fullscreen = false) }
+                            else -> return@Window false
+                        }
+                        pokes++
+                        true
                     }
-                    pokes++
-                    true
-                }
-            },
-        ) {
-            MaterialTheme(colors = darkColors(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
-                if (settingsOpen) {
-                    SettingsPanel(session, updater, screens.size, monitor, onClose = { settingsOpen = false })
-                } else {
-                    Box {
-                        NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size) { settingsOpen = true }
-                        val offered = (update as? UpdateState.Available)?.release
-                        val busy = update is UpdateState.Downloading || (update is UpdateState.Failed && (update as UpdateState.Failed).release != null)
-                        if (!updateDismissed && ((offered != null && !updater.isSkipped(offered)) || busy)) {
-                            UpdatePrompt(updater, update, onClose = { updateDismissed = true })
+                },
+            ) {
+                MaterialTheme(colors = darkColors(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
+                    if (settingsOpen) {
+                        SettingsPanel(session, updater, screens.size, monitor, onClose = { settingsOpen = false })
+                    } else {
+                        Box {
+                            NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size) { settingsOpen = true }
+                            val offered = (update as? UpdateState.Available)?.release
+                            val busy = update is UpdateState.Downloading || (update is UpdateState.Failed && (update as UpdateState.Failed).release != null)
+                            if (!updateDismissed && ((offered != null && !updater.isSkipped(offered)) || busy)) {
+                                UpdatePrompt(updater, update, onClose = { updateDismissed = true })
+                            }
                         }
                     }
                 }
@@ -266,6 +271,15 @@ fun statsText(s: PlayerState): String = buildString {
         appendLine("queued        ${y.queuedMs} ms")
         append("resyncs ${y.hardSyncs}  underruns ${y.underruns}")
     }
+}
+
+/**
+ * Hands memory freed by the closed window back to the system: a GC for the Java heap, then
+ * glibc's malloc_trim for native memory (Skia, AWT), which glibc otherwise keeps for reuse.
+ */
+private fun releaseMemory() {
+    System.gc()
+    runCatching { com.sun.jna.NativeLibrary.getInstance("c").getFunction("malloc_trim").invokeInt(arrayOf(0)) }
 }
 
 /** First snapserver announced over mDNS, by its IPv4 address. */

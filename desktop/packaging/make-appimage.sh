@@ -13,6 +13,8 @@ cp desktop/packaging/snaptv-desktop.desktop desktop/packaging/snaptv-desktop.png
 cat > "$DIR/AppRun" <<'RUN'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
+# Fewer malloc arenas: less native memory held per thread (glibc's default is 8 per core).
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
 exec "$HERE/usr/bin/snaptv-desktop" "$@"
 RUN
 chmod +x "$DIR/AppRun"

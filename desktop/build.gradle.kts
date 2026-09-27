@@ -48,6 +48,16 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "io.github.thinke.snaptv.desktop.MainKt"
+        // A small heap is plenty (audio buffers are a few MB); Serial GC has the least overhead
+        // for one busy thread, and the free-ratio flags let it give unused heap back to the OS.
+        jvmArgs += listOf(
+            "-Xmx128m",
+            "-XX:+UseSerialGC",
+            "-XX:MinHeapFreeRatio=10",
+            "-XX:MaxHeapFreeRatio=30",
+            "-XX:ReservedCodeCacheSize=48m",
+            "-Xss512k",
+        )
         nativeDistributions {
             targetFormats(TargetFormat.AppImage)
             packageName = "snaptv-desktop"
