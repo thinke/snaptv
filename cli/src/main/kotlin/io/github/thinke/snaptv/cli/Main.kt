@@ -7,6 +7,8 @@ import io.github.thinke.snaptv.core.ServerSettings
 import io.github.thinke.snaptv.core.SnapEngine
 import io.github.thinke.snaptv.core.SnapListener
 import io.github.thinke.snaptv.core.codec.SampleFormat
+import io.github.thinke.snaptv.core.transport.ServerAddress
+import io.github.thinke.snaptv.core.transport.TlsOptions
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
@@ -18,15 +20,25 @@ import javax.sound.sampled.SourceDataLine
 /**
  * Desktop harness for the core engine.
  *
- *   cli <host> [--port 1704] [--seconds N] [--play] [--wav out.wav] [--id ID]
+ *   cli <host|url> [--port 1704] [--seconds N] [--play] [--wav out.wav] [--id ID] [--server-cert ca.pem] [--insecure]
+ *
+ * The server is `host[:port]` (tcp) or a snapclient style URL: tcp://host:1704, ws://host:1780,
+ * wss://host:1788. For wss, --server-cert trusts only the given PEM certificate(s) and --insecure
+ * skips verification (snapclient's default without --server-cert).
  *
  * Without --play it simulates an output device with a fixed 100 ms buffer, which is enough to
  * exercise time sync and the sync buffer against a real server.
  */
 fun main(args: Array<String>) {
-    val host = args.firstOrNull { !it.startsWith("--") } ?: error("usage: cli <host> [--port P] [--seconds N] [--play] [--wav file] [--id ID]")
+    val valued = setOf("--port", "--seconds", "--wav", "--id", "--server-cert")
+    val server = args.indices.firstOrNull { i -> !args[i].startsWith("--") && args.getOrNull(i - 1) !in valued }?.let { args[it] }
+        ?: error("usage: cli <host[:port]|tcp://|ws://|wss://host[:port]> [--port P] [--seconds N] [--play] [--wav file] [--id ID] [--server-cert pem] [--insecure]")
     fun opt(name: String) = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
-    val port = opt("--port")?.toInt() ?: 1704
+    val address = ServerAddress.parse(server, defaultTcpPort = opt("--port")?.toInt() ?: 1704)
+    val tls = when {
+        "--insecure" in args -> TlsOptions(trustAll = true)
+        else -> opt("--server-cert")?.let { File(it).inputStream().use(TlsOptions::fromPem) } ?: TlsOptions.Default
+    }
     val seconds = opt("--seconds")?.toInt() ?: 0
     val play = "--play" in args
     val wav = opt("--wav")?.let { WavWriter(File(it)) }
@@ -44,7 +56,8 @@ fun main(args: Array<String>) {
         },
         clock,
     )
-    engine.start(host, port)
+    println("server: $address")
+    engine.start(address, tls)
 
     val blockFrames = 480
     val deadline = if (seconds > 0) clock.nowUs() + seconds * 1_000_000L else Long.MAX_VALUE

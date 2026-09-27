@@ -10,6 +10,9 @@ import io.github.thinke.snaptv.core.SnapEngine
 import io.github.thinke.snaptv.core.SnapListener
 import io.github.thinke.snaptv.core.codec.SampleFormat
 import io.github.thinke.snaptv.core.sync.SyncStats
+import io.github.thinke.snaptv.core.transport.Scheme
+import io.github.thinke.snaptv.core.transport.ServerAddress
+import io.github.thinke.snaptv.core.transport.TlsOptions
 import io.github.thinke.snaptv.core.visual.VisualBuffer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -79,11 +82,20 @@ class Player(context: Context, private val prefs: Prefs) {
         _state.update { it.copy(active = true) }
         sessionJob = scope.launch {
             // Reconnect whenever the chosen server changes.
-            prefs.settings.map { it.serverHost to it.serverPort }.distinctUntilChanged().collect { (host, port) ->
+            prefs.settings.map { Triple(it.serverHost, it.serverPort, it.tlsTrustAll) }.distinctUntilChanged().collect { (host, port, trustAll) ->
                 engine.stop()
-                val target = if (host.isNotBlank()) host to port else discover()
+                val target = if (host.isNotBlank()) {
+                    try {
+                        ServerAddress.parse(host, defaultTcpPort = port)
+                    } catch (e: IllegalArgumentException) {
+                        _state.update { it.copy(connection = ConnectionState.Failed(host, port, e.message ?: "bad server address")) }
+                        null
+                    }
+                } else {
+                    discover()
+                }
                 if (target != null) {
-                    engine.start(target.first, target.second)
+                    engine.start(target, if (trustAll) TlsOptions(trustAll = true) else TlsOptions.Default)
                     output.start()
                 }
             }
@@ -127,12 +139,12 @@ class Player(context: Context, private val prefs: Prefs) {
         scope.launch(Dispatchers.IO) { runCatching { engine.sendClientInfo(v, false) } }
     }
 
-    private suspend fun discover(): Pair<String, Int>? {
+    private suspend fun discover(): ServerAddress? {
         _state.update { it.copy(discovering = true) }
         try {
             while (true) {
                 val found = withTimeoutOrNull(10_000) { discovery.servers().first { it.isNotEmpty() } }
-                if (found != null) return found.first().host to found.first().port
+                if (found != null) return ServerAddress(Scheme.TCP, found.first().host, found.first().port)
                 _state.update { it.copy(connection = ConnectionState.Failed("", 0, "no snapserver found on the network")) }
             }
         } finally {

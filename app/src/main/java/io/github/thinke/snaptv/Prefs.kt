@@ -8,9 +8,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
 data class AppSettings(
-    /** Empty means "discover automatically". */
+    /**
+     * Empty means "discover automatically". Otherwise a host name/IP (tcp to [serverPort]) or a
+     * snapclient style URL such as ws://host:1780 or wss://host:1788, whose own or default port wins.
+     */
     val serverHost: String = "",
     val serverPort: Int = 1704,
+    /** wss only: accept any server certificate (snapclient's behaviour without --server-cert). */
+    val tlsTrustAll: Boolean = false,
     /** Extra output delay of this TV/soundbar that we compensate for. */
     val latencyMs: Int = 0,
     val visualStyle: Int = 0,
@@ -40,6 +45,7 @@ class Prefs(context: Context) {
         sp.edit()
             .putString("serverHost", next.serverHost)
             .putInt("serverPort", next.serverPort)
+            .putBoolean("tlsTrustAll", next.tlsTrustAll)
             .putInt("latencyMs", next.latencyMs)
             .putInt("visualStyle", next.visualStyle)
             .putBoolean("startOnBoot", next.startOnBoot)
@@ -53,6 +59,7 @@ class Prefs(context: Context) {
         return AppSettings(
             serverHost = sp.getString("serverHost", d.serverHost) ?: "",
             serverPort = sp.getInt("serverPort", d.serverPort),
+            tlsTrustAll = sp.getBoolean("tlsTrustAll", d.tlsTrustAll),
             latencyMs = sp.getInt("latencyMs", d.latencyMs),
             visualStyle = sp.getInt("visualStyle", d.visualStyle),
             startOnBoot = sp.getBoolean("startOnBoot", d.startOnBoot),
