@@ -1,5 +1,6 @@
 package io.github.thinke.snaptv.core
 
+import io.github.thinke.snaptv.core.codec.SampleFormat
 import io.github.thinke.snaptv.core.protocol.BaseHeader
 import io.github.thinke.snaptv.core.protocol.ErrorMessage
 import io.github.thinke.snaptv.core.protocol.MessageReader
@@ -18,6 +19,7 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.nio.ByteBuffer
@@ -141,6 +143,137 @@ class AuthTest {
             acceptor.join(1000)
         }
     }
+
+    /** Accepts connections on loopback; [reply] answers each one after its Hello has been read. */
+    private class FakeServer(private val reply: (OutputStream) -> Unit) : AutoCloseable {
+        val socket = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        val connections = AtomicInteger()
+        private val acceptor = Thread {
+            while (!socket.isClosed) {
+                val s = runCatching { socket.accept() }.getOrNull() ?: break
+                connections.incrementAndGet()
+                s.use {
+                    val input = DataInputStream(it.getInputStream())
+                    val header = ByteArray(BaseHeader.SIZE).also { h -> input.readFully(h) }
+                    val size = ByteBuffer.wrap(header, 22, 4).order(ByteOrder.LITTLE_ENDIAN).getInt()
+                    input.readFully(ByteArray(size))
+                    runCatching { reply(it.getOutputStream()) }
+                }
+            }
+        }.apply { isDaemon = true; start() }
+
+        override fun close() {
+            socket.close()
+            acceptor.join(1000)
+        }
+    }
+
+    private class Recorder(private val done: (Recorder) -> Boolean) : SnapListener {
+        val events = CopyOnWriteArrayList<Any>()
+        val latch = CountDownLatch(1)
+        private fun add(e: Any) { events += e; if (done(this)) latch.countDown() }
+        override fun onState(state: ConnectionState) = add(state)
+        override fun onFormat(format: SampleFormat, codec: String) = add(format)
+        override fun onServerError(message: String) = add("error:$message")
+        override fun onAuthFailed(failure: AuthFailure) = add(failure)
+    }
+
+    @Test
+    fun engineReportsForbidden() {
+        FakeServer { MessageWriter.write(it, MessageType.ERROR, 0, 0, errorPayload(403, "Forbidden", "Permission 'Streaming' missing")) }.use { server ->
+            val rec = Recorder { r -> r.events.any { it is ConnectionState.Failed } }
+            val engine = SnapEngine(identity, rec)
+            try {
+                engine.start("127.0.0.1", server.socket.localPort, Credentials("u", "p"))
+                assertTrue(rec.latch.await(5, TimeUnit.SECONDS))
+                val f = rec.events.filterIsInstance<ConnectionState.Failed>().first()
+                assertTrue(f.auth!!.forbidden)
+                assertEquals("Not allowed to stream: Permission 'Streaming' missing", f.reason)
+                assertEquals(listOf(AuthFailure(403, "Forbidden", "Permission 'Streaming' missing")), rec.events.filterIsInstance<AuthFailure>())
+                // Refused at Hello: never claimed to be Connected.
+                assertFalse(rec.events.any { it is ConnectionState.Connected })
+            } finally {
+                engine.stop()
+            }
+        }
+    }
+
+    @Test
+    fun otherServerErrorsDoNotEndTheSession() {
+        val done = CountDownLatch(1)
+        FakeServer { out ->
+            MessageWriter.write(out, MessageType.ERROR, 0, 0, errorPayload(500, "Internal", "oops"))
+            MessageWriter.write(out, MessageType.SERVER_SETTINGS, 1, 0, MessageWriter.jsonPayload("""{"bufferMs":1000,"latency":0,"volume":50,"muted":false}"""))
+            MessageWriter.write(out, MessageType.CODEC_HEADER, 2, 0, codecHeaderPayload("pcm", wavHeader(48000, 16, 2)))
+            done.await(5, TimeUnit.SECONDS) // hold the connection open until the test is done
+        }.use { server ->
+            val rec = Recorder { r -> r.events.any { it is SampleFormat } }
+            val engine = SnapEngine(identity, rec)
+            try {
+                engine.start("127.0.0.1", server.socket.localPort)
+                assertTrue(rec.latch.await(5, TimeUnit.SECONDS))
+                val e = rec.events.toList()
+                assertEquals("error:Internal: oops", e.single { it is String })
+                assertEquals(SampleFormat(48000, 16, 2), e.single { it is SampleFormat })
+                assertTrue(e.indexOf("error:Internal: oops") < e.indexOfFirst { it is SampleFormat })
+                assertFalse(e.any { it is ConnectionState.Failed || it is AuthFailure })
+                // Connected only once the server answered Hello, i.e. after the error and before the format.
+                val connected = e.indexOfFirst { it is ConnectionState.Connected }
+                assertTrue(connected > e.indexOf("error:Internal: oops"))
+                assertTrue(connected < e.indexOfFirst { it is SampleFormat })
+            } finally {
+                done.countDown()
+                engine.stop()
+            }
+        }
+    }
+
+    @Test
+    fun authBackoffDoublesUpToFiveMinutes() {
+        val seq = generateSequence(SnapEngine.AUTH_BACKOFF_MIN_MS) { SnapEngine.nextAuthBackoffMs(it) }.take(7).toList()
+        assertEquals(listOf(30_000L, 60_000L, 120_000L, 240_000L, 300_000L, 300_000L, 300_000L), seq)
+    }
+
+    /** Two auth failures in a row: the second wait is twice the first. */
+    @Test
+    fun engineDoublesAuthBackoff() {
+        FakeServer { MessageWriter.write(it, MessageType.ERROR, 0, 0, errorPayload(401, "Unauthorized", "Wrong password")) }.use { server ->
+            val times = CopyOnWriteArrayList<Long>()
+            val rec = Recorder { r -> r.events.count { it is ConnectionState.Connecting } >= 3 }
+            val engine = SnapEngine(identity, object : SnapListener by rec {
+                override fun onState(state: ConnectionState) {
+                    if (state is ConnectionState.Connecting) times += System.nanoTime()
+                    rec.onState(state)
+                }
+            })
+            engine.authBackoffMinMs = 200
+            try {
+                engine.start("127.0.0.1", server.socket.localPort, Credentials("u", "p"))
+                assertTrue(rec.latch.await(5, TimeUnit.SECONDS))
+                val first = (times[1] - times[0]) / 1_000_000
+                val second = (times[2] - times[1]) / 1_000_000
+                assertTrue("first wait $first ms", first in 200..399)
+                assertTrue("second wait $second ms", second in 400..799)
+            } finally {
+                engine.stop()
+            }
+        }
+    }
+
+    private fun codecHeaderPayload(codec: String, header: ByteArray): ByteArray {
+        val c = codec.toByteArray(Charsets.US_ASCII)
+        return ByteBuffer.allocate(8 + c.size + header.size).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(c.size).put(c).putInt(header.size).put(header).array()
+    }
+
+    /** The 44-byte RIFF/WAVE header snapserver's pcm encoder sends as its codec header. */
+    private fun wavHeader(rate: Int, bits: Int, channels: Int): ByteArray =
+        ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray()); putInt(36); put("WAVE".toByteArray())
+            put("fmt ".toByteArray()); putInt(16); putShort(1); putShort(channels.toShort()); putInt(rate)
+            putInt(rate * channels * bits / 8); putShort((channels * bits / 8).toShort()); putShort(bits.toShort())
+            put("data".toByteArray()); putInt(0)
+        }.array()
 
     private fun header() = BaseHeader(MessageType.ERROR, 0, 0, 0, 0, 0)
 

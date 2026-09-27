@@ -17,7 +17,10 @@ data class AppSettings(
     val startOnBoot: Boolean = true,
     val keepScreenOn: Boolean = true,
     val showStats: Boolean = false,
-    /** Only needed when snapserver has `[http] auth` users; both empty means no auth. */
+    /**
+     * Only needed when snapserver has `[authorization] enabled`; both empty means no auth.
+     * snapserver 0.34.0 forces authorization off, so this is for future servers.
+     */
     val authUser: String = "",
     val authPassword: String = "",
 )

@@ -52,8 +52,12 @@ data class ClientIdentity(
 )
 
 /**
- * Login for a snapserver with `[http] auth` users configured. Sent in Hello as the "Basic"
- * scheme, i.e. base64("user:password") - encoded, not encrypted, so anyone on the LAN can read it.
+ * Login for a snapserver with `[authorization]` enabled (`enabled`, `role`, `user` keys). Sent in
+ * Hello as the "Basic" scheme, i.e. base64("user:password") - encoded, not encrypted, so anyone on
+ * the LAN can read it.
+ *
+ * snapserver 0.34.0 forces authorization off whatever its config says (snapserver.cpp "TODO: auth"),
+ * so it accepts and ignores this; the 401/403 path is only exercised by tests, not a real server.
  */
 data class Credentials(val user: String, val password: String) {
     /** The Hello "Auth" param, built exactly like snapclient does from tcp://user:password@host. */
@@ -80,6 +84,7 @@ data class ServerSettings(val bufferMs: Int = 1000, val latencyMs: Int = 0, val 
 sealed interface ConnectionState {
     data object Stopped : ConnectionState
     data class Connecting(val host: String, val port: Int) : ConnectionState
+    /** The server accepted our Hello (first ServerSettings or CodecHeader), not merely TCP connected. */
     data class Connected(val host: String, val port: Int) : ConnectionState
     /** [auth] is set when the server rejected our credentials; we then retry only slowly. */
     data class Failed(val host: String, val port: Int, val reason: String, val auth: AuthFailure? = null) : ConnectionState
@@ -176,7 +181,7 @@ class SnapEngine(
 
     private fun connectLoop(host: String, port: Int, credentials: Credentials?) {
         var backoffMs = 500L
-        var authBackoffMs = AUTH_BACKOFF_MIN_MS
+        var authBackoffMs = authBackoffMinMs
         while (running) {
             var delayMs = backoffMs
             listener.onState(ConnectionState.Connecting(host, port))
@@ -188,14 +193,17 @@ class SnapEngine(
                 s.soTimeout = 15_000 // server sends time replies every second; silence means dead
                 out = s.getOutputStream()
                 backoffMs = 500L
-                listener.onState(ConnectionState.Connected(host, port))
-                session(s, credentials)
+                session(s, credentials) {
+                    // Like snapclient, the Hello reply (ServerSettings) is what means we're in.
+                    authBackoffMs = authBackoffMinMs
+                    listener.onState(ConnectionState.Connected(host, port))
+                }
             } catch (e: AuthFailedException) {
                 if (!running) break
                 // Wrong credentials won't fix themselves and a settings change restarts us anyway;
                 // keep retrying, slowly, in case the server's user list is being edited.
                 delayMs = authBackoffMs
-                authBackoffMs = (authBackoffMs * 2).coerceAtMost(AUTH_BACKOFF_MAX_MS)
+                authBackoffMs = nextAuthBackoffMs(authBackoffMs)
                 listener.onAuthFailed(e.failure)
                 listener.onState(ConnectionState.Failed(host, port, e.failure.describe(), e.failure))
             } catch (e: Exception) {
@@ -216,15 +224,20 @@ class SnapEngine(
         }
     }
 
-    private fun session(s: Socket, credentials: Credentials?) {
+    private fun session(s: Socket, credentials: Credentials?, onAccepted: () -> Unit) {
         send(MessageType.HELLO, MessageWriter.jsonPayload(helloJson(identity, credentials)))
         val timeThread = Thread({ timeLoop(s) }, "snap-time").apply { isDaemon = true; start() }
         try {
             val input = DataInputStream(BufferedInputStream(s.getInputStream(), 64 * 1024))
             var decoder: Decoder? = null
+            var accepted = false
+            fun accept() {
+                if (!accepted) { accepted = true; onAccepted() }
+            }
             while (running && !s.isClosed) {
                 when (val msg = MessageReader.read(input, clock::nowUs)) {
                     is CodecHeader -> {
+                        accept()
                         val d = Decoder.forCodec(msg.codec)
                         val format = d.setHeader(msg.payload)
                         decoder = d
@@ -242,6 +255,7 @@ class SnapEngine(
                         b.add(PcmChunk(msg.timestampUs, pcm, b.format.channels))
                     }
                     is ServerSettingsMessage -> {
+                        accept()
                         val o = Json.parseToJsonElement(msg.json).jsonObject
                         val ns = ServerSettings(
                             bufferMs = o["bufferMs"]?.jsonPrimitive?.int ?: settings.bufferMs,
@@ -293,10 +307,16 @@ class SnapEngine(
 
     private class AuthFailedException(val failure: AuthFailure) : Exception(failure.describe())
 
+    /** First retry delay after an auth failure; tests shorten it. */
+    @Volatile internal var authBackoffMinMs = AUTH_BACKOFF_MIN_MS
+
     companion object {
         private const val MIN_TIME_SAMPLES = 5
-        private const val AUTH_BACKOFF_MIN_MS = 30_000L
-        private const val AUTH_BACKOFF_MAX_MS = 300_000L
+        internal const val AUTH_BACKOFF_MIN_MS = 30_000L
+        internal const val AUTH_BACKOFF_MAX_MS = 300_000L
+
+        /** Auth retries double from 30 s up to 5 min; an accepted Hello starts over. */
+        internal fun nextAuthBackoffMs(currentMs: Long): Long = (currentMs * 2).coerceAtMost(AUTH_BACKOFF_MAX_MS)
     }
 }
 

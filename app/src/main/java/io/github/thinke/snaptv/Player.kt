@@ -59,7 +59,14 @@ class Player(context: Context, private val prefs: Prefs) {
     val visual = VisualBuffer()
 
     private val engine = SnapEngine(identity(context, prefs.clientId), object : SnapListener {
-        override fun onState(state: ConnectionState) = _state.update { it.copy(connection = state) }
+        override fun onState(state: ConnectionState) = _state.update {
+            // Connected means the server took our Hello, so a previous auth refusal no longer applies.
+            if (state is ConnectionState.Connected && it.authError != null) {
+                it.copy(connection = state, authError = null, serverError = null)
+            } else {
+                it.copy(connection = state)
+            }
+        }
         override fun onFormat(format: SampleFormat, codec: String) =
             _state.update { it.copy(format = format, codec = codec, serverError = null, authError = null) }
         override fun onSettings(settings: ServerSettings) {
