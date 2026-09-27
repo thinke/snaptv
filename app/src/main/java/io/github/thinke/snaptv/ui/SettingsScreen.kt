@@ -60,7 +60,16 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     val state by player.state.collectAsStateWithLifecycle()
     val servers by remember { Discovery(context).servers() }.collectAsState(emptyList())
     var picker by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
 
+    if (renaming) {
+        NameEditor(
+            current = state.room?.clientName.orEmpty(),
+            onSave = { player.setName(it); renaming = false },
+            onBack = { renaming = false },
+        )
+        return
+    }
     if (picker) {
         ServerPicker(
             servers = servers.map { "${it.name} (${it.host})" to it },
@@ -99,6 +108,39 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                         )
                     },
                     modifier = Modifier.focusRequester(first),
+                )
+            }
+            item {
+                val room = state.room
+                ListItem(
+                    selected = false,
+                    enabled = room != null && room.streams.size > 1,
+                    onClick = {
+                        val r = room ?: return@ListItem
+                        val i = r.streams.indexOfFirst { it.id == r.stream?.id }
+                        player.setStream(r.streams[(i + 1) % r.streams.size].id)
+                    },
+                    headlineContent = { Text("Source") },
+                    supportingContent = {
+                        Text(
+                            when {
+                                room == null -> "Not available (no control connection)"
+                                room.streams.size > 1 -> "Press OK to switch · applies to this TV's whole group"
+                                else -> "The server has one source"
+                            }
+                        )
+                    },
+                    trailingContent = { Text(room?.stream?.id ?: "–") },
+                )
+            }
+            item {
+                ListItem(
+                    selected = false,
+                    enabled = state.room != null,
+                    onClick = { renaming = true },
+                    headlineContent = { Text("Name in Snapcast") },
+                    supportingContent = { Text("How this TV appears in Snapweb and other controllers") },
+                    trailingContent = { Text(state.room?.clientName ?: "–") },
                 )
             }
             item {
@@ -228,6 +270,37 @@ private fun <T : io.github.thinke.snaptv.DiscoveredServer> ServerPicker(
         }
     }
     LaunchedEffect(Unit) { first.requestFocus() }
+}
+
+@Composable
+private fun NameEditor(current: String, onSave: (String) -> Unit, onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+    var name by remember { mutableStateOf(current) }
+    val field = remember { FocusRequester() }
+    Column(Modifier.fillMaxSize().background(Color(0xFF0D0F1A)).padding(horizontal = 56.dp, vertical = 36.dp)) {
+        Text("Name in Snapcast", style = MaterialTheme.typography.headlineLarge, color = Color.White)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 24.dp)) {
+            Box(
+                Modifier
+                    .width(360.dp)
+                    .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                BasicTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 20.sp),
+                    cursorBrush = SolidColor(Color.White),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSave(name.trim()) }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(field),
+                )
+            }
+            Button(onClick = { onSave(name.trim()) }, modifier = Modifier.padding(start = 16.dp)) { Text("Save") }
+        }
+    }
+    LaunchedEffect(Unit) { field.requestFocus() }
 }
 
 /** Accepts "host" or "host:port". */

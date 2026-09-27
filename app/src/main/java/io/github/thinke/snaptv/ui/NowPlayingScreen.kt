@@ -91,8 +91,22 @@ fun NowPlayingScreen(player: Player, prefs: Prefs, onOpenSettings: () -> Unit) {
         AnimatedVisibility(overlay || !state.audible, enter = fadeIn(), exit = fadeOut()) {
             Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 32.dp)) {
                 Column(Modifier.align(Alignment.TopStart)) {
-                    Text("SnapTV", style = MaterialTheme.typography.headlineMedium, color = Color.White)
-                    Text(statusLine(state), style = MaterialTheme.typography.bodyLarge, color = Color.White.copy(alpha = 0.75f))
+                    val room = state.room
+                    val track = room?.stream?.track
+                    Text(
+                        track?.title ?: room?.clientName?.takeIf { it.isNotBlank() } ?: "SnapTV",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color.White,
+                    )
+                    val detail = when {
+                        track != null -> listOfNotNull(track.artist, track.album).joinToString(" · ")
+                        room != null -> listOfNotNull(room.groupName.takeIf { it.isNotBlank() }, room.stream?.id?.let { "source $it" }).joinToString(" · ")
+                        else -> ""
+                    }
+                    if (detail.isNotBlank()) {
+                        Text(detail, style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.85f))
+                    }
+                    Text(statusLine(state), style = MaterialTheme.typography.bodyLarge, color = Color.White.copy(alpha = 0.6f))
                 }
                 Row(
                     Modifier.align(Alignment.BottomStart).fillMaxWidth(),

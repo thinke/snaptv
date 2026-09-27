@@ -9,6 +9,8 @@ import io.github.thinke.snaptv.core.ServerSettings
 import io.github.thinke.snaptv.core.SnapEngine
 import io.github.thinke.snaptv.core.SnapListener
 import io.github.thinke.snaptv.core.codec.SampleFormat
+import io.github.thinke.snaptv.core.control.ControlClient
+import io.github.thinke.snaptv.core.control.RoomInfo
 import io.github.thinke.snaptv.core.sync.SyncStats
 import io.github.thinke.snaptv.core.visual.VisualBuffer
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +42,8 @@ data class PlayerState(
     val serverError: String? = null,
     /** Real sound in the last few seconds; the source streams digital silence when idle. */
     val audible: Boolean = false,
+    /** Our name, group and stream from the control API; null until known. */
+    val room: RoomInfo? = null,
 )
 
 /**
@@ -65,6 +69,7 @@ class Player(context: Context, private val prefs: Prefs) {
     }).also { it.tap = visual }
 
     private val output = AudioOutput(engine)
+    private val control = ControlClient(prefs.clientId) { room -> _state.update { it.copy(room = room) } }
     private var sessionJob: Job? = null
 
     init {
@@ -81,9 +86,11 @@ class Player(context: Context, private val prefs: Prefs) {
             // Reconnect whenever the chosen server changes.
             prefs.settings.map { it.serverHost to it.serverPort }.distinctUntilChanged().collect { (host, port) ->
                 engine.stop()
+                control.stop()
                 val target = if (host.isNotBlank()) host to port else discover()
                 if (target != null) {
                     engine.start(target.first, target.second)
+                    control.start(target.first)
                     output.start()
                 }
             }
@@ -114,6 +121,7 @@ class Player(context: Context, private val prefs: Prefs) {
         sessionJob = null
         output.stop()
         engine.stop()
+        control.stop()
         _state.update { PlayerState() }
     }
 
@@ -125,6 +133,17 @@ class Player(context: Context, private val prefs: Prefs) {
         applyVolume(next)
         _state.update { it.copy(server = next) }
         scope.launch(Dispatchers.IO) { runCatching { engine.sendClientInfo(v, false) } }
+    }
+
+    /** Switch the source for this TV's whole group (as Snapweb does). */
+    fun setStream(streamId: String) {
+        val room = _state.value.room ?: return
+        scope.launch(Dispatchers.IO) { control.setStream(room.groupId, streamId) }
+    }
+
+    /** The name shown for this TV in Snapweb and other controllers. */
+    fun setName(name: String) {
+        scope.launch(Dispatchers.IO) { control.setName(name) }
     }
 
     private suspend fun discover(): Pair<String, Int>? {
