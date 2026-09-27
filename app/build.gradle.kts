@@ -14,6 +14,7 @@ android {
         // CI passes these from the release tag (v1.2.3 -> 1.2.3); local builds use the defaults.
         versionCode = System.getenv("SNAPTV_VERSION_CODE")?.toInt() ?: 1
         versionName = System.getenv("SNAPTV_VERSION_NAME") ?: "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Release signing comes from the environment so no key material lives in the repo.
@@ -60,4 +61,6 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.tv.material)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
