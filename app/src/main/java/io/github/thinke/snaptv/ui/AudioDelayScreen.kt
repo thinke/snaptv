@@ -113,8 +113,8 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                 ListItem(
                     selected = false,
                     onClick = { roomTest = true },
-                    headlineContent = { Text("Room sync test") },
-                    supportingContent = { Text("Clicks through snapcast in this TV's group; adjust until the rooms' clicks merge") },
+                    headlineContent = { Text("Sync test through snapcast") },
+                    supportingContent = { Text("A click through the whole snapcast path and a flash when it should be heard; adjust until they coincide") },
                 )
             }
             item {

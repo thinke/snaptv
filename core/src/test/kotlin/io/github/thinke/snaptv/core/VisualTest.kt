@@ -33,4 +33,14 @@ class VisualTest {
         assertTrue(v.window(510_000, out))
         assertEquals(479 / 32768f, out.last(), 1e-6f)
     }
+
+    @Test
+    fun findsOnsetAheadOfNow() {
+        val v = VisualBuffer()
+        val block = ShortArray(9600 * 2) // 200 ms, heard from t = 1 s
+        for (i in 4800 until 4810) { block[i * 2] = 20000; block[i * 2 + 1] = 20000 } // click 100 ms in
+        v.onPlayed(block, 9600, 2, 48000, heardAtUs = 1_000_000)
+        assertEquals(1_100_000L, v.onsetBetween(1_000_000, 1_200_000, 0.3f))
+        assertEquals(null, v.onsetBetween(1_000_000, 1_090_000, 0.3f))
+    }
 }

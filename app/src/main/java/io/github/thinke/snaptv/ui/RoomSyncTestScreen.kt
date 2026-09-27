@@ -24,7 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -63,9 +65,9 @@ fun RoomSyncTestScreen(player: Player, onBack: () -> Unit) {
     val first = remember { FocusRequester() }
     Row(Modifier.fillMaxSize().background(Color(0xFF0D0F1A)).padding(horizontal = 56.dp, vertical = 36.dp)) {
         Column(Modifier.width(380.dp).padding(end = 32.dp)) {
-            Text("Room sync test", style = MaterialTheme.typography.headlineLarge, color = Color.White)
+            Text("Sync test through snapcast", style = MaterialTheme.typography.headlineLarge, color = Color.White)
             Text(
-                "Plays a click every second through snapcast in this TV's group, so every room in the group clicks together exactly as snapcast times them. Only this group is switched; it gets its music back when you leave.",
+                "Sends a click every second through snapcast and shows on screen when snapcast says it should be heard, so the whole path is tested, soundbar included. Only this TV's group is switched; it gets its music back when you leave.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.65f),
                 modifier = Modifier.padding(top = 12.dp),
@@ -90,13 +92,12 @@ fun RoomSyncTestScreen(player: Player, onBack: () -> Unit) {
                         color = Color.White.copy(alpha = 0.85f),
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                    if (others.none { it.connected }) {
-                        Text(
-                            "To compare with another room, add it to this TV's group in Snapweb first. Alone, the test still lets you hear the TV's click.",
-                            color = Color(0xFFFFD27F),
-                            modifier = Modifier.padding(top = 12.dp),
-                        )
-                    }
+                    Text(
+                        if (others.any { it.connected }) "These rooms click too, so you can also compare them with the TV by ear."
+                        else "Works with this TV alone: the screen shows when each click should be heard.",
+                        color = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
                     Button(
                         onClick = { player.startRoomSyncTest(); running = true },
                         modifier = Modifier.padding(top = 20.dp).focusRequester(first),
@@ -113,21 +114,30 @@ private fun RunningTest(player: Player, onStop: () -> Unit) {
     BackHandler(onBack = onStop)
     val delayMs by player.audioDelayMs.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
-    var flashAtNanos by remember { mutableLongStateOf(0L) }
     var frameNanos by remember { mutableLongStateOf(0L) }
+    var frameDurationNanos by remember { mutableLongStateOf(16_666_667L) }
+    // Heard times (local clock) of the last click reached and of the next one due.
+    var lastClickUs by remember { mutableLongStateOf(0L) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    // Make sure the rooms get their music back however this screen goes away.
+    // Make sure the group gets its music back however this screen goes away.
     DisposableEffect(Unit) { onDispose { player.stopRoomSyncTest() } }
     LaunchedEffect(Unit) {
-        // Longer than a frame, so a click never falls between two looks.
-        val window = FloatArray(1200)
+        var last = 0L
+        var nextClickUs: Long? = null
         while (true) {
             withFrameNanos { t ->
+                if (last != 0L) frameDurationNanos = (frameDurationNanos * 7 + (t - last)) / 8
+                last = t
                 frameNanos = t
-                val ok = player.visual.window(System.nanoTime() / 1000, window)
-                if (ok && window.maxOf { abs(it) } > CLICK_LEVEL && t - flashAtNanos > 500_000_000L) {
-                    flashAtNanos = t
+                // What this frame shows reaches the screen about two frames from now.
+                val shownUs = (t + 2 * frameDurationNanos) / 1000
+                val next = nextClickUs ?: player.visual.onsetBetween(shownUs - 20_000, shownUs + LOOKAHEAD_US, CLICK_LEVEL)
+                    ?.takeIf { it - lastClickUs > 500_000 }
+                nextClickUs = next
+                if (next != null && shownUs >= next) {
+                    lastClickUs = next
+                    nextClickUs = null
                 }
             }
         }
@@ -158,32 +168,47 @@ private fun RunningTest(player: Player, onStop: () -> Unit) {
             }
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val since = (frameNanos - flashAtNanos) / 1_000_000f
-            val a = if (flashAtNanos == 0L) 0f else max(0f, 1f - since / 250f)
-            if (a > 0f) drawCircle(Color.White.copy(alpha = 0.9f * a), radius = size.height * 0.18f, center = center)
+            val shownUs = (frameNanos + 2 * frameDurationNanos) / 1000
+            val cx = size.width / 2
+            val cy = size.height * 0.55f
+            if (lastClickUs != 0L) {
+                // Clicks come once a second on snapcast's timeline; sweep towards the next one.
+                var phase = Math.floorMod(shownUs - lastClickUs, PERIOD_US)
+                if (phase > PERIOD_US / 2) phase -= PERIOD_US
+                val flash = max(0f, 1f - abs(phase) / FLASH_US.toFloat())
+                if (flash > 0f) drawCircle(Color.White.copy(alpha = 0.9f * flash), radius = size.height * 0.16f, center = Offset(cx, cy))
+                val x = cx + phase.toFloat() / PERIOD_US * size.width * 0.9f
+                drawCircle(Color(0xFFC084FC), radius = 26f, center = Offset(x, cy))
+                drawCircle(Color.White, radius = 26f, center = Offset(x, cy), style = Stroke(3f))
+            }
+            drawLine(Color.White.copy(alpha = 0.25f), Offset(size.width * 0.05f, cy), Offset(size.width * 0.95f, cy), strokeWidth = 3f)
+            drawLine(Color(0xFF6EE7D8), Offset(cx, cy - 90f), Offset(cx, cy + 90f), strokeWidth = 6f)
         }
         Column(Modifier.align(Alignment.TopCenter).padding(top = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Room sync test", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+            Text("Sync test through snapcast", style = MaterialTheme.typography.headlineMedium, color = Color.White)
             Text("${if (delayMs > 0) "+" else ""}$delayMs ms", color = MaterialTheme.colorScheme.primary, fontSize = 48.sp)
             Text(
-                "Stand where you hear this TV and another room. The flash marks this TV's click.\n" +
-                    "Adjust until the clicks merge into one: ◀ ▶ 10 ms · ▲ ▼ 50 ms · Back to finish\n" +
-                    "TV clicks after the other room: raise it. Before: lower it.",
+                "The click travels the whole snapcast path. The flash marks when snapcast says it should be heard.\n" +
+                    "Adjust until click and flash happen together: ◀ ▶ 10 ms · ▲ ▼ 50 ms · Back to finish\n" +
+                    "Click after the flash: raise it. Before: lower it.",
                 color = Color.White.copy(alpha = 0.75f),
                 textAlign = TextAlign.Center,
             )
         }
-        error?.let {
-            Text(
-                "Can't send the click track: $it",
-                color = Color(0xFFFF8A80),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(40.dp),
-            )
-        }
+        Text(
+            error?.let { "Can't send the click track: $it" }
+                ?: (if (lastClickUs == 0L) "Waiting for the first click…" else "Rooms grouped with this TV click too, so you can also compare them by ear."),
+            color = if (error != null) Color(0xFFFF8A80) else Color.White.copy(alpha = 0.5f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(40.dp),
+        )
     }
     LaunchedEffect(Unit) { focus.requestFocus() }
 }
+
+private const val PERIOD_US = 1_000_000L
+private const val FLASH_US = 90_000L
+private const val LOOKAHEAD_US = 250_000L
 
 /** The click track peaks around 0.6; music between clicks is muted, so anything this loud is a click. */
 private const val CLICK_LEVEL = 0.2f

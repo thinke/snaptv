@@ -48,5 +48,23 @@ class VisualBuffer(capacityPow2: Int = 16) : PlaybackTap {
         return true
     }
 
+    /**
+     * Heard time (local clock) of the first sample in [fromUs, toUs) louder than [threshold],
+     * or null. Audio is written ahead of time, so this can look into the near future: that is
+     * how a flash can be drawn exactly when a click is due to be heard.
+     */
+    @Synchronized
+    fun onsetBetween(fromUs: Long, toUs: Long, threshold: Float): Long? {
+        if (written == 0L) return null
+        val first = maxOf(anchorFrame + (fromUs - anchorUs) * rate / 1_000_000L, written - size + 1, 0L)
+        val last = minOf(anchorFrame + (toUs - anchorUs) * rate / 1_000_000L, written - 1)
+        var f = first
+        while (f <= last) {
+            if (kotlin.math.abs(ring[(f and mask.toLong()).toInt()]) > threshold) return anchorUs + (f - anchorFrame) * 1_000_000L / rate
+            f++
+        }
+        return null
+    }
+
     val sampleRate: Int @Synchronized get() = rate
 }
