@@ -43,4 +43,16 @@ class VisualTest {
         assertEquals(1_100_000L, v.onsetBetween(1_000_000, 1_200_000, 0.3f))
         assertEquals(null, v.onsetBetween(1_000_000, 1_090_000, 0.3f))
     }
+
+    @Test
+    fun queuedClickKeepsItsTimeWhenDelayChanges() {
+        val v = VisualBuffer()
+        val click = ShortArray(480 * 2).also { for (i in 0 until 10) { it[i * 2] = 20000; it[i * 2 + 1] = 20000 } }
+        val quiet = ShortArray(480 * 2)
+        v.onPlayed(click, 480, 2, 48000, heardAtUs = 1_000_000) // click heard at 1.000 s
+        // Then the delay changes by 300 ms: later blocks are stamped differently.
+        v.onPlayed(quiet, 480, 2, 48000, heardAtUs = 1_310_000)
+        assertEquals(1_000_000L, v.onsetBetween(900_000, 1_500_000, 0.3f))
+    }
 }
+

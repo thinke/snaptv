@@ -136,6 +136,7 @@ private fun RunningTest(player: Player, onStop: () -> Unit) {
                     ?.takeIf { it - lastClickUs > 500_000 }
                 nextClickUs = next
                 if (next != null && shownUs >= next) {
+                    if (io.github.thinke.snaptv.BuildConfig.DEBUG) android.util.Log.d("SnapTV.RoomTest", "flash for click heard at $next us (delta ${next - lastClickUs})")
                     lastClickUs = next
                     nextClickUs = null
                 }

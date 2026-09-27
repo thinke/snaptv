@@ -17,11 +17,21 @@ class VisualBuffer(capacityPow2: Int = 16) : PlaybackTap {
     private var anchorUs = 0L
     private var rate = 48000
 
+    /**
+     * Heard time of each written block, as it was when written. Mapping everything from the
+     * newest block would re-time audio queued before a delay change, so a click already in the
+     * queue would appear to move.
+     */
+    private class Block(val firstFrame: Long, val frames: Int, val heardUs: Long)
+    private val blocks = ArrayDeque<Block>()
+
     @Synchronized
     override fun onPlayed(samples: ShortArray, frames: Int, channels: Int, rate: Int, heardAtUs: Long) {
         this.rate = rate
         anchorFrame = written
         anchorUs = heardAtUs
+        blocks.addLast(Block(written, frames, heardAtUs))
+        while (blocks.isNotEmpty() && blocks.first().firstFrame + blocks.first().frames < written + frames - size) blocks.removeFirst()
         var i = 0
         for (f in 0 until frames) {
             var sum = 0
@@ -55,15 +65,21 @@ class VisualBuffer(capacityPow2: Int = 16) : PlaybackTap {
      */
     @Synchronized
     fun onsetBetween(fromUs: Long, toUs: Long, threshold: Float): Long? {
-        if (written == 0L) return null
-        val first = maxOf(anchorFrame + (fromUs - anchorUs) * rate / 1_000_000L, written - size + 1, 0L)
-        val last = minOf(anchorFrame + (toUs - anchorUs) * rate / 1_000_000L, written - 1)
-        var f = first
-        while (f <= last) {
-            if (kotlin.math.abs(ring[(f and mask.toLong()).toInt()]) > threshold) return anchorUs + (f - anchorFrame) * 1_000_000L / rate
-            f++
+        var best: Long? = null
+        for (b in blocks) {
+            val blockEndUs = b.heardUs + b.frames * 1_000_000L / rate
+            if (blockEndUs <= fromUs || b.heardUs >= toUs) continue
+            for (i in 0 until b.frames) {
+                val at = b.heardUs + i * 1_000_000L / rate
+                if (at < fromUs) continue
+                if (at >= toUs || (best != null && at >= best)) break
+                if (kotlin.math.abs(ring[((b.firstFrame + i) and mask.toLong()).toInt()]) > threshold) {
+                    best = at
+                    break
+                }
+            }
         }
-        return null
+        return best
     }
 
     val sampleRate: Int @Synchronized get() = rate

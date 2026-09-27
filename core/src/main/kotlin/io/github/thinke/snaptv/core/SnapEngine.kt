@@ -178,7 +178,11 @@ class SnapEngine(
         val compensationUs = (s.latencyMs + outputLatencyMs) * 1000L
         val playAt = timeSync.toServer(dacUs) - s.bufferMs * 1000L + compensationUs
         val played = b.read(out, frames, playAt)
-        tap?.onPlayed(out, frames, b.format.channels, b.format.rate, dacUs + compensationUs)
+        // When snapcast wants this audio heard: its stream time plus the buffer. That doesn't
+        // depend on our delay compensation, so a delay change can't move it, even while the
+        // audio is still being re-aligned.
+        val heardUs = if (played) b.lastReadStreamUs + s.bufferMs * 1000L - timeSync.offsetUs else dacUs + compensationUs
+        tap?.onPlayed(out, frames, b.format.channels, b.format.rate, heardUs)
         return played
     }
 

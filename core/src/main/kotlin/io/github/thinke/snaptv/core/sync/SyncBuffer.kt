@@ -52,6 +52,13 @@ class SyncBuffer(
     private var correctionAcc = 0.0
     private var hardSyncs = 0
 
+    /**
+     * Stream (server) time of out[0] from the last [read] that played audio. Silence padding
+     * before the first frame is included, so it is exact for every frame of the block.
+     */
+    var lastReadStreamUs: Long = Long.MIN_VALUE
+        private set
+
     /** Diagnostic hook: called (under the buffer's lock) for starts, resyncs and underruns. */
     @Volatile var onEvent: ((String) -> Unit)? = null
     private var underruns = 0
@@ -103,6 +110,7 @@ class SyncBuffer(
                 updateCorrection(frames)
             }
         }
+        lastReadStreamUs = cursorUs() - filled * 1_000_000L / rate
         copy(out, filled, frames)
         return true
     }
