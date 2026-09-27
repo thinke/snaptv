@@ -77,5 +77,24 @@ class ReleasesTest {
         assertEquals("https://x/d.sha", appImage?.download("x86_64.AppImage")?.second?.url)
         assertEquals("v0.3.0", Releases.newest(r, v("0.1.0"), includePrereleases = false)?.tag)
     }
-}
 
+    @Test
+    fun changesSinceInstalled() {
+        fun rel(tag: String, pre: Boolean, body: String) = """{"tag_name":"$tag","prerelease":$pre,"draft":false,"body":"$body","assets":[
+            {"name":"snaptv-$tag.apk","size":1,"browser_download_url":"https://x/$tag.apk"},
+            {"name":"snaptv-$tag.apk.sha256","size":1,"browser_download_url":"https://x/$tag.sha"}]}"""
+        val r = Releases.parse("[" + listOf(
+            rel("v0.2.2", false, "## Changes\\n- One copy at a time\\n- Restart after update\\n\\n**Full Changelog**: https://x/compare"),
+            rel("v0.2.2-rc1", true, "- Test build"),
+            rel("v0.2.1", false, "* Show the [server name](https://x/pr/1)"),
+            rel("v0.2.0", false, "**Full Changelog**: https://x/compare"),
+            rel("v0.1.8", false, "- Old"),
+        ).joinToString(",") + "]")
+        val target = Releases.newest(r, v("0.1.8"), includePrereleases = false)!!
+        val changes = Releases.changesSince(r, v("0.1.8"), target, includePrereleases = false)
+        assertEquals(listOf("0.2.2", "0.2.1"), changes.map { it.version.toString() }) // 0.2.0 has no notes, 0.1.8 is installed
+        assertEquals(listOf("One copy at a time", "Restart after update"), changes[0].lines)
+        assertEquals(listOf("Show the server name"), changes[1].lines)
+        assertEquals(3, Releases.changesSince(r, v("0.1.8"), target, includePrereleases = true).size)
+    }
+}

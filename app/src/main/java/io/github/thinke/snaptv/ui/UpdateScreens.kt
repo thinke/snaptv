@@ -10,17 +10,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,6 +36,7 @@ import androidx.tv.material3.Text
 import io.github.thinke.snaptv.Prefs
 import io.github.thinke.snaptv.UpdateState
 import io.github.thinke.snaptv.Updater
+import io.github.thinke.snaptv.core.update.Release
 import kotlinx.coroutines.launch
 
 /** Shown over the visualizer when a new version is found. */
@@ -91,7 +98,7 @@ fun UpdatesScreen(updater: Updater, prefs: Prefs, onBack: () -> Unit) {
                         selected = false,
                         onClick = { updater.install(available) },
                         headlineContent = { Text("Install SnapTV ${available.version}") },
-                        supportingContent = { Text(available.notes.lines().firstOrNull { it.isNotBlank() }?.take(120) ?: available.name) },
+                        supportingContent = { Text(available.changes.firstOrNull()?.lines?.firstOrNull()?.take(120) ?: available.name) },
                     )
                 }
             }
@@ -136,7 +143,7 @@ private fun UpdatePanel(state: UpdateState, updater: Updater, onClose: () -> Uni
             val r = state.release
             Text("SnapTV ${r.version} is available", style = MaterialTheme.typography.headlineMedium, color = Color.White)
             Text("You have ${updater.installed}", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
-            Text(r.notes.lines().filter { it.isNotBlank() }.take(8).joinToString("\n").ifBlank { r.name }, color = Color.White.copy(alpha = 0.8f))
+            ChangeList(r)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 24.dp)) {
                 Button(onClick = { updater.install(r) }, modifier = Modifier.focusRequester(first)) { Text("Update") }
                 OutlinedButton(onClick = onClose) { Text("Later") }
@@ -180,6 +187,36 @@ private fun UpdatePanel(state: UpdateState, updater: Updater, onClose: () -> Uni
         }
     }
     LaunchedEffect(state::class) { runCatching { first.requestFocus() } }
+}
+
+/**
+ * What's new since the installed version, per release. Each line takes focus, so the remote's
+ * ▲ ▼ scroll through a long list; the buttons stay below it.
+ */
+@Composable
+private fun ChangeList(r: Release) {
+    if (r.changes.isEmpty()) {
+        Text(r.name, color = Color.White.copy(alpha = 0.8f))
+        return
+    }
+    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        r.changes.forEach { c ->
+            item { Text(c.version.toString(), style = MaterialTheme.typography.titleSmall, color = Color.White, modifier = Modifier.padding(top = 8.dp)) }
+            items(c.lines) { line -> FocusableLine("• $line") }
+        }
+    }
+}
+
+@Composable
+private fun FocusableLine(text: String) {
+    var focused by remember { mutableStateOf(false) }
+    Text(
+        text,
+        color = Color.White.copy(alpha = if (focused) 1f else 0.8f),
+        modifier = Modifier.fillMaxWidth()
+            .background(if (focused) Color.White.copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(4.dp))
+            .onFocusChanged { focused = it.isFocused }.focusable().padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 private fun statusText(s: UpdateState): String = when (s) {

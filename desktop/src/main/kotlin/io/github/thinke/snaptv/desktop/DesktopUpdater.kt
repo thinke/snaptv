@@ -78,8 +78,9 @@ class DesktopUpdater(
         _state.value = try {
             val releases = Releases.parse(get(Releases.API_URL))
             prefs.lastUpdateCheck = System.currentTimeMillis()
-            val newest = Releases.newest(releases, installed, prefs.settings.value.updatePrerelease) { it.download(SUFFIX) != null }
-            if (newest != null) UpdateState.Available(newest)
+            val pre = prefs.settings.value.updatePrerelease
+            val newest = Releases.newest(releases, installed, pre) { it.download(SUFFIX) != null }
+            if (newest != null) UpdateState.Available(newest.copy(changes = Releases.changesSince(releases, installed, newest, pre)))
             else UpdateState.UpToDate(releases.firstOrNull { !it.prerelease }?.version?.toString())
         } catch (e: Exception) {
             UpdateState.Failed("Couldn't check for updates: ${e.message ?: e.javaClass.simpleName}")

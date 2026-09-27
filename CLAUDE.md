@@ -38,7 +38,7 @@ table below with every such change.
 | Stats overlay (toggle in Settings) | ✅ | ✅ | |
 | Visualizer choice, volume in Settings | ✅ | ✅ | |
 | Screensaver (DreamService) | ✅ | n/a | Android only |
-| Update check from GitHub releases (on open + daily, SHA-256 checked, skip/pre-releases) | ✅ PackageInstaller | ✅ replaces its AppImage and restarts | `core/update/Releases`; the AppImage also carries zsync update info for AppImageUpdate/Gear Lever |
+| Update check from GitHub releases (on open + daily, SHA-256 checked, skip/pre-releases, what's new since the installed version) | ✅ PackageInstaller | ✅ replaces its AppImage and restarts | `core/update/Releases`; the AppImage also carries zsync update info for AppImageUpdate/Gear Lever |
 | Remote / touch / mouse / keyboard input | ✅ D-pad, touch, mouse | ✅ keyboard, mouse | |
 | Multi-monitor full screen | n/a | ✅ | desktop only |
 | Background playback | ✅ foreground service | ✅ system tray (KDE StatusNotifierItem, symbolic icon; XEmbed fallback) | closing only hides the window; the tray icon's menu (left or right click) shows it or quits |

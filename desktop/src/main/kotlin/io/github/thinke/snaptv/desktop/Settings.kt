@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.thinke.snaptv.core.session.SnapSession
 import io.github.thinke.snaptv.core.transport.ServerAddress
 import io.github.thinke.snaptv.ui.VisualStyle
@@ -236,7 +238,7 @@ fun UpdatePrompt(updater: DesktopUpdater, state: UpdateState, onClose: () -> Uni
                     val r = state.release
                     Text("SnapTV Desktop ${r.version} is available", style = MaterialTheme.typography.h5, color = Color.White)
                     Text("You have $VERSION", color = Color.White.copy(alpha = 0.6f))
-                    Text(r.notes.lines().filter { it.isNotBlank() }.take(8).joinToString("\n").ifBlank { r.name }, color = Color.White.copy(alpha = 0.8f))
+                    ChangeList(r)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(onClick = { updater.install(r) }) { Text("Update and restart") }
                         OutlinedButton(onClick = onClose) { Text("Later") }
@@ -263,3 +265,18 @@ fun UpdatePrompt(updater: DesktopUpdater, state: UpdateState, onClose: () -> Uni
 
 /** "steambox (fd3a::1)", or just the address while the name is unknown. */
 internal fun nameAndAddress(label: String, host: String) = if (label == host) host else "$label ($host)"
+
+/** What's new since the installed version, per release; scrolls with the mouse wheel when long. */
+@Composable
+private fun ChangeList(r: io.github.thinke.snaptv.core.update.Release) {
+    if (r.changes.isEmpty()) {
+        Text(r.name, color = Color.White.copy(alpha = 0.8f))
+        return
+    }
+    Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        r.changes.forEach { c ->
+            Text(c.version.toString(), color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
+            c.lines.forEach { Text("• $it", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp) }
+        }
+    }
+}

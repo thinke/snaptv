@@ -81,8 +81,9 @@ class Updater(private val context: Context, private val prefs: Prefs, private va
             try {
                 val releases = Releases.parse(get(Releases.API_URL))
                 prefs.lastUpdateCheck = System.currentTimeMillis()
-                val newest = Releases.newest(releases, installed, prefs.settings.value.updatePrerelease)
-                if (newest != null) UpdateState.Available(newest)
+                val pre = prefs.settings.value.updatePrerelease
+                val newest = Releases.newest(releases, installed, pre)
+                if (newest != null) UpdateState.Available(newest.copy(changes = Releases.changesSince(releases, installed, newest, pre)))
                 else UpdateState.UpToDate(releases.firstOrNull { !it.prerelease }?.version?.toString())
             } catch (e: Exception) {
                 Log.w(TAG, "update check failed", e)

@@ -12,6 +12,9 @@ import kotlinx.serialization.json.long
 
 data class Asset(val name: String, val url: String, val size: Long)
 
+/** One release's changes, for "what's new". */
+data class Change(val version: Version, val lines: List<String>)
+
 /** A published release with the files an update needs. */
 data class Release(
     val version: Version,
@@ -26,6 +29,8 @@ data class Release(
     val pageUrl: String,
     /** Every file of the release, so each app can pick its own (APK, AppImage). */
     val assets: List<Asset> = emptyList(),
+    /** What changed since the installed version, newest first; filled in by the updater (see [Releases.changesSince]). */
+    val changes: List<Change> = emptyList(),
 ) {
     /** The file matching [suffix] and its published checksum, or null if the release lacks either. */
     fun download(suffix: String): Pair<Asset, Asset>? {
@@ -125,6 +130,24 @@ object Releases {
     /** The release to offer over [installed], or null if none is newer. */
     fun newest(releases: List<Release>, installed: Version, includePrereleases: Boolean, hasFile: (Release) -> Boolean = { true }): Release? =
         releases.filter { (includePrereleases || !it.prerelease) && hasFile(it) }.maxByOrNull { it.version }?.takeIf { it.version > installed }
+
+    /**
+     * What changed after [installed] up to [target]: the notes of every release in between,
+     * newest first, so updating 0.1.8 → 0.2.2 shows 0.2.2, 0.2.1 and 0.2.0.
+     */
+    fun changesSince(releases: List<Release>, installed: Version, target: Release, includePrereleases: Boolean): List<Change> =
+        releases.filter { it.version > installed && it.version <= target.version && (includePrereleases || !it.prerelease || it.tag == target.tag) }
+            .sortedByDescending { it.version }
+            .map { Change(it.version, noteLines(it.notes)) }
+            .filter { it.lines.isNotEmpty() }
+
+    /** Release notes (GitHub markdown) as plain lines: list marks, headings, links and the "Full Changelog" footer removed. */
+    fun noteLines(notes: String): List<String> = notes.lines().map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("**Full Changelog**") }
+        .map { line ->
+            line.removePrefix("- ").removePrefix("* ").replace("**", "")
+                .replace(Regex("""\[([^\]]+)]\([^)]*\)"""), "$1") // [text](url) → text
+        }
 
     /** The hash from a `sha256sum` line ("<hex>  <file>"). */
     fun parseSha256(text: String): String? =

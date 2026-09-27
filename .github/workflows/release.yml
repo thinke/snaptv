@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all history and tags, for the release notes
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -55,9 +57,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Release notes: the commits since the previous tag. The apps show them as "what's new".
+          prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          {
+            echo "## Changes"
+            git log --no-merges --format='- %s' ${prev:+$prev..}"$GITHUB_REF_NAME"
+            if [ -n "$prev" ]; then echo; echo "**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$prev...$GITHUB_REF_NAME"; fi
+          } > release-notes.md
           gh release create "$GITHUB_REF_NAME" \
             "snaptv-$SNAPTV_VERSION_NAME.apk" "snaptv-$SNAPTV_VERSION_NAME.apk.sha256" \
             "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage" "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage.sha256" \
             "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage.zsync" \
-            --title "SnapTV $SNAPTV_VERSION_NAME" --generate-notes \
+            --title "SnapTV $SNAPTV_VERSION_NAME" --notes-file release-notes.md \
             $([[ "$SNAPTV_VERSION_NAME" == *-* ]] && echo --prerelease)
