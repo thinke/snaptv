@@ -11,10 +11,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Only for measuring the audio delay (Settings → Audio delay → Measure). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- TV first, but nothing stops it running on a phone or tablet. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:name=".SnapTvApp"

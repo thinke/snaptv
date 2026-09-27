@@ -66,6 +66,12 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     var picker by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var login by remember { mutableStateOf(false) }
+    var delayScreen by remember { mutableStateOf(false) }
+
+    if (delayScreen) {
+        AudioDelayScreen(player, prefs, onBack = { delayScreen = false })
+        return
+    }
 
     if (login) {
         LoginEditor(
@@ -178,9 +184,9 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
             item {
                 ListItem(
                     selected = false,
-                    onClick = {},
+                    onClick = { delayScreen = true },
                     headlineContent = { Text("Audio delay") },
-                    supportingContent = { Text("Raise it if this TV sounds later than the other rooms. ◀ ▶ adjusts in 10 ms steps.") },
+                    supportingContent = { Text("Raise it if this TV sounds later than the other rooms. OK to measure or tune by ear; ◀ ▶ adjusts here in 10 ms steps.") },
                     trailingContent = { Text("${if (settings.latencyMs > 0) "+" else ""}${settings.latencyMs} ms") },
                     modifier = Modifier.onPreviewKeyEvent { e ->
                         if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false

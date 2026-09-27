@@ -88,6 +88,30 @@ class Player(context: Context, private val prefs: Prefs) {
 
     private val output = AudioOutput(engine)
 
+    /**
+     * Beep once a second, heard on the beat when the delay settings are right: the sound half of
+     * the manual sync test. Replaces the music while on.
+     */
+    fun setSyncTestTone(on: Boolean) {
+        output.metronome = if (on) {
+            Metronome(beep(), SYNC_TEST_PERIOD_US) { (engine.settings.latencyMs + engine.outputLatencyMs) * 1000L }
+        } else {
+            null
+        }
+    }
+
+    private fun beep(): FloatArray {
+        val n = 48000 * 30 / 1000
+        return FloatArray(n) { i ->
+            // 30 ms of 1 kHz with a fast fade in and out, so the onset is sharp but click-free.
+            val env = minOf(1f, i / 48f, (n - i) / 240f)
+            (0.5 * env * kotlin.math.sin(2 * Math.PI * 1000 * i / 48000)).toFloat()
+        }
+    }
+
+    /** Measures this TV's delay after the DAC; see [Calibrator]. */
+    fun calibrator(context: Context) = Calibrator(context, output)
+
     init {
         engine.syncEvents = { android.util.Log.i("SnapTV.Sync", it) }
     }
@@ -228,6 +252,7 @@ class Player(context: Context, private val prefs: Prefs) {
     private data class Endpoint(val host: String, val port: Int, val credentials: Credentials?, val tlsTrustAll: Boolean)
 
     companion object {
+        const val SYNC_TEST_PERIOD_US = 1_000_000L
         private const val AUDIBLE_RMS = 0.001f // about -60 dBFS
         private const val AUDIBLE_HOLD_US = 8_000_000L
 

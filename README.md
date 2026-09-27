@@ -8,9 +8,13 @@ what is playing instead of a blank menu.
   ▲ ▼ changes volume, OK opens settings.
 - **Plays in the background.** Audio runs in a foreground service, keeps going while the TV
   shows other apps, and can start at boot.
-- **In sync, including the TV's own delay.** HDMI, soundbars and TV sound processing add
-  delay that changes from one setup to the next. Settings → *Audio delay* compensates for it,
-  and applies live while you listen.
+- **In sync, including the TV's own delay.** Soundbars (especially over HDMI ARC) and TV sound
+  processing delay the sound after Android hands it over, and Android can't see it. Settings →
+  *Audio delay* compensates, live while you listen, with three ways to find the value:
+  - **Sync test with picture:** a beep and a flash once a second; adjust until they coincide.
+  - **Measure with the TV's microphone:** plays test chirps and times them automatically
+    (needs a TV with a built-in microphone, switched on).
+  - **By ear** against another room, in 10 ms and 50 ms steps.
 - **Visuals that match the sound.** Spectrum, halo and oscilloscope styles are drawn from the
   exact samples being played, timed to when they are *heard*, not when they are decoded.
 - **Finds your server.** Discovers snapserver over mDNS (`_snapcast._tcp`), or you can enter

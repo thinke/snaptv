@@ -18,9 +18,29 @@ import io.github.thinke.snaptv.core.codec.SampleFormat
  * about to write. That estimate only depends on frame counts, not on when write() happens to
  * return, so a blocking write never skews it. The engine then picks samples for that moment.
  */
+/**
+ * Test sound for measuring the delay after the DAC: [chirp] starts reaching the DAC exactly at
+ * each of [atUs] (monotonic, the clock AudioTrack timestamps use). While a plan is set, the
+ * stream is muted and only the chirps play.
+ */
+class ChirpPlan(val chirp: FloatArray, val atUs: List<Long>)
+
+/**
+ * A beep on every beat of the monotonic clock ([periodUs]), for the manual sync test. It is
+ * scheduled [delayUs] early, exactly like the music, so with the right Audio delay it is
+ * *heard* on the beat. [delayUs] is read live, so adjustments apply to the next beep.
+ */
+class Metronome(val sound: FloatArray, val periodUs: Long, val delayUs: () -> Long)
+
 class AudioOutput(private val engine: SnapEngine) {
     @Volatile private var running = false
     @Volatile var gain: Float = 1f
+    @Volatile var calibration: ChirpPlan? = null
+    @Volatile var metronome: Metronome? = null
+
+    /** Monotonic time (us) the next written frame reaches the DAC; 0 until the track reports it. */
+    @Volatile var nextDacUs: Long = 0
+        private set
     private var thread: Thread? = null
 
     /** How far behind "written" the DAC is, as last measured (ms); for the stats overlay. */
@@ -136,7 +156,10 @@ class AudioOutput(private val engine: SnapEngine) {
                 }
                 continue
             }
-            val g = gain
+            val plan = calibration
+            val beat = metronome
+            // Test sounds must be audible even if the room is turned down or muted.
+            val g = if (plan != null || beat != null) maxOf(gain, CALIBRATION_MIN_GAIN) else gain
             if (g != appliedGain) { track.setVolume(g); appliedGain = g }
 
             val nowUs = System.nanoTime() / 1000
@@ -166,7 +189,12 @@ class AudioOutput(private val engine: SnapEngine) {
             if (haveTs) {
                 val dacUs = tsUs + (written - tsFrame) * 1_000_000L / f.rate
                 bufferedMs = ((dacUs - nowUs) / 1000).toInt()
-                engine.render(buf, blockFrames, dacUs)
+                nextDacUs = dacUs
+                when {
+                    plan != null -> renderChirps(plan, buf, blockFrames, f, dacUs)
+                    beat != null -> renderBeats(beat, buf, blockFrames, f, dacUs)
+                    else -> engine.render(buf, blockFrames, dacUs)
+                }
             } else {
                 // Until the device reports a real timestamp we don't know its latency, and a
                 // guess would only cause a hard resync a moment later. Prime it with silence.
@@ -178,7 +206,31 @@ class AudioOutput(private val engine: SnapEngine) {
         }
     }
 
+    private fun renderBeats(m: Metronome, buf: ShortArray, frames: Int, f: SampleFormat, dacUs: Long) {
+        val delay = m.delayUs()
+        val blockUs = frames * 1_000_000L / f.rate
+        val soundUs = m.sound.size * 1_000_000L / f.rate
+        // Beats whose sound (sent `delay` early) overlaps this block.
+        val firstBeat = Math.floorDiv(dacUs + delay - soundUs, m.periodUs) + 1
+        val lastBeat = Math.floorDiv(dacUs + delay + blockUs, m.periodUs)
+        renderChirps(ChirpPlan(m.sound, (firstBeat..lastBeat).map { it * m.periodUs - delay }), buf, frames, f, dacUs)
+    }
+
+    private fun renderChirps(plan: ChirpPlan, buf: ShortArray, frames: Int, f: SampleFormat, dacUs: Long) {
+        buf.fill(0)
+        for (at in plan.atUs) {
+            // Frame of this block where the chirp's first sample belongs (may be negative).
+            val start = ((at - dacUs) * f.rate / 1_000_000L).toInt()
+            if (start >= frames || start + plan.chirp.size <= 0) continue
+            for (i in maxOf(0, -start) until minOf(plan.chirp.size, frames - start)) {
+                val v = (plan.chirp[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+                for (c in 0 until f.channels) buf[(start + i) * f.channels + c] = v
+            }
+        }
+    }
+
     private companion object {
+        const val CALIBRATION_MIN_GAIN = 0.5f
         const val TAG = "SnapTV.Audio"
         const val TIMESTAMP_POLL_US = 250_000L
         const val TIMESTAMP_JUMP_LOG_US = 1_000L
