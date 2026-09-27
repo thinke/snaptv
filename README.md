@@ -9,6 +9,10 @@ what is playing instead of a blank menu.
 | Halo | Oscilloscope |
 |---|---|
 | ![Halo visualizer](docs/screenshots/halo.png) | ![Oscilloscope visualizer](docs/screenshots/oscilloscope.png) |
+| **Ridges** | **Starfield** |
+| ![Ridges visualizer](docs/screenshots/ridges.png) | ![Starfield visualizer](docs/screenshots/starfield.png) |
+| **Pulse** | **Liquid** |
+| ![Pulse visualizer](docs/screenshots/pulse.png) | ![Liquid visualizer](docs/screenshots/liquid.png) |
 | **Audio delay** | **Sync test with picture** |
 | ![Audio delay settings](docs/screenshots/audio-delay.png) | ![Sync test](docs/screenshots/sync-test.png) |
 

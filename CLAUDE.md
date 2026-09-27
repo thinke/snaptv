@@ -30,7 +30,7 @@ table below with every such change.
 | Selectable decoders + on-device decoder self-test | ✅ | ❌ | desktop has only `core` decoders so far |
 | Transports: tcp, ws, wss; auth; accept-any-certificate | ✅ | ✅ | `core`; both Settings UIs |
 | Server discovery (mDNS) | ✅ NSD | ✅ JmDNS | |
-| Visualizers: Spectrum, Halo, Oscilloscope | ✅ | ✅ | `shared/visuals` |
+| Visualizers: Spectrum, Halo, Oscilloscope, Ridges, Starfield, Pulse, Liquid | ✅ | ✅ | `shared/visuals` |
 | Room/track names, source switching, rename (JSON-RPC) | ✅ | ✅ | `SnapSession` |
 | Audio delay stored as server latency, adjustable (−50/−10/+10/+50, reset) | ✅ | ✅ | `SnapSession` |
 | Picture sync test / microphone measurement | ✅ | ❌ | |
@@ -53,6 +53,7 @@ System Java on the dev machine is a JRE only: use `JAVA_HOME=~/tools/jdk-21`.
 ```sh
 ./gradlew :core:test                         # unit tests
 ./gradlew :app:assembleDebug                 # Android debug APK
+./gradlew :desktop:renderVisuals -Pout=DIR   # every visualizer style as PNGs, from a made-up song
 ANDROID_SERIAL=emulator-5556 ./gradlew :app:connectedDebugAndroidTest   # on one device only
 ./gradlew :desktop:run --args="--server HOST --windowed"   # also --mode source --source-port N --sink NAME (not saved)
 desktop/packaging/make-appimage.sh           # SnapTV-Desktop-x86_64.AppImage (needs appimagetool)

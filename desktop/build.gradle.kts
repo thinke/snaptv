@@ -70,3 +70,11 @@ compose.desktop {
         }
     }
 }
+
+// Dev tool: renders every visualizer style to PNGs (see RenderVisuals.kt).
+tasks.register<JavaExec>("renderVisuals") {
+    group = "verification"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.thinke.snaptv.desktop.RenderVisualsKt")
+    args(providers.gradleProperty("out").orElse(layout.buildDirectory.dir("visuals").get().asFile.path).get())
+}

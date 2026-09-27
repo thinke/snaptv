@@ -30,6 +30,10 @@ enum class VisualStyle(val label: String) {
     Bars("Spectrum"),
     Halo("Halo"),
     Scope("Oscilloscope"),
+    Ridges("Ridges"),
+    Starfield("Starfield"),
+    Pulse("Pulse"),
+    Liquid("Liquid"),
     ;
 
     companion object {
@@ -46,6 +50,7 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
     val spectrum = remember { Spectrum(fftSize = 2048, bands = 48) }
     val samples = remember { FloatArray(2048) }
     val path = remember { Path() }
+    val scene = remember { Scene(spectrum.bands) }
     var frameNanos by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(visual) {
@@ -57,6 +62,7 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
                 // System.nanoTime is the clock AudioTrack timestamps use.
                 if (visual.window(System.nanoTime() / 1000, samples)) spectrum.update(samples, visual.sampleRate, dt)
                 else spectrum.decay(dt)
+                scene.step(spectrum, samples, visual.sampleRate, dt)
                 frameNanos = t
             }
         }
@@ -69,12 +75,16 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
             VisualStyle.Bars -> drawBars(spectrum, time)
             VisualStyle.Halo -> drawHalo(spectrum, time)
             VisualStyle.Scope -> drawScope(samples, spectrum, path, time)
+            VisualStyle.Ridges -> drawRidges(scene, spectrum, path, time)
+            VisualStyle.Starfield -> drawStarfield(scene, spectrum, time)
+            VisualStyle.Pulse -> drawPulse(scene, spectrum, time)
+            VisualStyle.Liquid -> drawLiquid(spectrum, path, time)
         }
     }
 }
 
 /** Slowly drifting hue, so a long listening session doesn't look static. */
-private fun palette(t: Float, time: Float, saturation: Float = 0.75f, value: Float = 1f): Color {
+internal fun palette(t: Float, time: Float, saturation: Float = 0.75f, value: Float = 1f): Color {
     val hue = ((170f + t * 150f + time * 4f) % 360f + 360f) % 360f
     return Color.hsv(hue, saturation, value)
 }
