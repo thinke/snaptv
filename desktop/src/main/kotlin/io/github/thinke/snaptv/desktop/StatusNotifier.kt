@@ -165,7 +165,7 @@ class StatusNotifier(
             .RegisterStatusNotifierItem(name)
         connection = c
         true
-    } catch (e: Exception) {
+    } catch (e: Throwable) { // incl. a missing class in a trimmed runtime: fall back, don't crash
         System.err.println("SnapTV: no StatusNotifier tray (${e.message}); using the basic tray")
         if (System.getenv("SNAPTV_DEBUG") != null) e.printStackTrace()
         runCatching { connection?.close() }

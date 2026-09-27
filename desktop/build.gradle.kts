@@ -53,8 +53,9 @@ compose.desktop {
             packageName = "snaptv-desktop"
             packageVersion = snaptvVersion.get().substringBefore('-').let { if (it == "0.0.0") "0.0.1" else it }
             description = "SnapTV Desktop: Snapcast room with a visualizer"
-            // JNA and JmDNS need these at run time.
-            modules("java.naming", "jdk.unsupported")
+            // The trimmed runtime only has the modules listed here: JmDNS needs java.naming,
+            // JNA jdk.unsupported, dbus-java jdk.security.auth (to read the Unix user id).
+            modules("java.naming", "jdk.unsupported", "jdk.security.auth")
         }
     }
 }
