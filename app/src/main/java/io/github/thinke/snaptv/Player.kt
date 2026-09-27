@@ -3,8 +3,10 @@ package io.github.thinke.snaptv
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import io.github.thinke.snaptv.core.AuthFailure
 import io.github.thinke.snaptv.core.ClientIdentity
 import io.github.thinke.snaptv.core.ConnectionState
+import io.github.thinke.snaptv.core.Credentials
 import io.github.thinke.snaptv.core.ServerSettings
 import io.github.thinke.snaptv.core.SnapEngine
 import io.github.thinke.snaptv.core.SnapListener
@@ -38,6 +40,8 @@ data class PlayerState(
     val rttUs: Long = 0,
     val outputBufferMs: Int = 0,
     val serverError: String? = null,
+    /** Set while the server rejects our login; the engine then retries only every 30 s or more. */
+    val authError: AuthFailure? = null,
     /** Real sound in the last few seconds; the source streams digital silence when idle. */
     val audible: Boolean = false,
 )
@@ -56,12 +60,16 @@ class Player(context: Context, private val prefs: Prefs) {
 
     private val engine = SnapEngine(identity(context, prefs.clientId), object : SnapListener {
         override fun onState(state: ConnectionState) = _state.update { it.copy(connection = state) }
-        override fun onFormat(format: SampleFormat, codec: String) = _state.update { it.copy(format = format, codec = codec, serverError = null) }
+        override fun onFormat(format: SampleFormat, codec: String) =
+            _state.update { it.copy(format = format, codec = codec, serverError = null, authError = null) }
         override fun onSettings(settings: ServerSettings) {
             _state.update { it.copy(server = settings) }
             applyVolume(settings)
         }
         override fun onServerError(message: String) = _state.update { it.copy(serverError = message) }
+        // serverError is what the status line shows today, so auth failures surface there too.
+        override fun onAuthFailed(failure: AuthFailure) =
+            _state.update { it.copy(authError = failure, serverError = failure.describe()) }
     }).also { it.tap = visual }
 
     private val output = AudioOutput(engine)
@@ -78,12 +86,14 @@ class Player(context: Context, private val prefs: Prefs) {
         if (sessionJob?.isActive == true) return
         _state.update { it.copy(active = true) }
         sessionJob = scope.launch {
-            // Reconnect whenever the chosen server changes.
-            prefs.settings.map { it.serverHost to it.serverPort }.distinctUntilChanged().collect { (host, port) ->
+            // Reconnect whenever the chosen server or the login changes.
+            prefs.settings.map { Endpoint(it.serverHost, it.serverPort, Credentials.of(it.authUser, it.authPassword)) }
+                .distinctUntilChanged().collect { (host, port, credentials) ->
                 engine.stop()
+                _state.update { it.copy(authError = null, serverError = null) }
                 val target = if (host.isNotBlank()) host to port else discover()
                 if (target != null) {
-                    engine.start(target.first, target.second)
+                    engine.start(target.first, target.second, credentials)
                     output.start()
                 }
             }
@@ -164,6 +174,8 @@ class Player(context: Context, private val prefs: Prefs) {
         for (v in x) sum += v * v
         return kotlin.math.sqrt(sum / x.size)
     }
+
+    private data class Endpoint(val host: String, val port: Int, val credentials: Credentials?)
 
     companion object {
         private const val AUDIBLE_RMS = 0.001f // about -60 dBFS

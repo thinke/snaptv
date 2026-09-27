@@ -17,6 +17,9 @@ data class AppSettings(
     val startOnBoot: Boolean = true,
     val keepScreenOn: Boolean = true,
     val showStats: Boolean = false,
+    /** Only needed when snapserver has `[http] auth` users; both empty means no auth. */
+    val authUser: String = "",
+    val authPassword: String = "",
 )
 
 class Prefs(context: Context) {
@@ -45,6 +48,11 @@ class Prefs(context: Context) {
             .putBoolean("startOnBoot", next.startOnBoot)
             .putBoolean("keepScreenOn", next.keepScreenOn)
             .putBoolean("showStats", next.showStats)
+            .putString("authUser", next.authUser)
+            // Plain text in app-private prefs (allowBackup is off), so readable only with root.
+            // EncryptedSharedPreferences would add a dependency for little gain: snapcast sends
+            // it as base64 over unencrypted TCP anyway, so it is a LAN password, not a secret.
+            .putString("authPassword", next.authPassword)
             .apply()
     }
 
@@ -58,6 +66,8 @@ class Prefs(context: Context) {
             startOnBoot = sp.getBoolean("startOnBoot", d.startOnBoot),
             keepScreenOn = sp.getBoolean("keepScreenOn", d.keepScreenOn),
             showStats = sp.getBoolean("showStats", d.showStats),
+            authUser = sp.getString("authUser", d.authUser) ?: "",
+            authPassword = sp.getString("authPassword", d.authPassword) ?: "",
         )
     }
 

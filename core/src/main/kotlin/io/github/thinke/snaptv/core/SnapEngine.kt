@@ -28,6 +28,7 @@ import java.io.DataInputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.Base64
 
 /** Monotonic microseconds. On Android this must match AudioTimestamp.nanoTime's clock. */
 fun interface MonotonicClock {
@@ -50,13 +51,38 @@ data class ClientIdentity(
     val instance: Int = 1,
 )
 
+/**
+ * Login for a snapserver with `[http] auth` users configured. Sent in Hello as the "Basic"
+ * scheme, i.e. base64("user:password") - encoded, not encrypted, so anyone on the LAN can read it.
+ */
+data class Credentials(val user: String, val password: String) {
+    /** The Hello "Auth" param, built exactly like snapclient does from tcp://user:password@host. */
+    fun basicParam(): String = Base64.getEncoder().encodeToString("$user:$password".toByteArray(Charsets.UTF_8))
+
+    override fun toString() = "Credentials(user=$user, password=***)"
+
+    companion object {
+        /** Like snapclient: send auth when either field is set, otherwise none. */
+        fun of(user: String, password: String): Credentials? =
+            if (user.isEmpty() && password.isEmpty()) null else Credentials(user, password)
+    }
+}
+
+/** The server refused our Hello: [code] 401 = bad/missing credentials, 403 = no Streaming permission. */
+data class AuthFailure(val code: Int, val error: String, val message: String) {
+    val forbidden: Boolean get() = code == ErrorMessage.FORBIDDEN
+
+    fun describe(): String = if (forbidden) "Not allowed to stream: $message" else "Authentication failed: $message"
+}
+
 data class ServerSettings(val bufferMs: Int = 1000, val latencyMs: Int = 0, val volume: Int = 100, val muted: Boolean = false)
 
 sealed interface ConnectionState {
     data object Stopped : ConnectionState
     data class Connecting(val host: String, val port: Int) : ConnectionState
     data class Connected(val host: String, val port: Int) : ConnectionState
-    data class Failed(val host: String, val port: Int, val reason: String) : ConnectionState
+    /** [auth] is set when the server rejected our credentials; we then retry only slowly. */
+    data class Failed(val host: String, val port: Int, val reason: String, val auth: AuthFailure? = null) : ConnectionState
 }
 
 interface SnapListener {
@@ -64,6 +90,8 @@ interface SnapListener {
     fun onFormat(format: SampleFormat, codec: String) {}
     fun onSettings(settings: ServerSettings) {}
     fun onServerError(message: String) {}
+    /** The server rejected our Hello; followed by a [ConnectionState.Failed] with [ConnectionState.Failed.auth] set. */
+    fun onAuthFailed(failure: AuthFailure) {}
 }
 
 /** Receives exactly what is being played, stamped with when it will be heard (local clock). */
@@ -100,15 +128,17 @@ class SnapEngine(
     private val writeLock = Any()
     private var nextMessageId = 0
 
-    fun start(host: String, port: Int = 1704) {
+    fun start(host: String, port: Int = 1704, credentials: Credentials? = null) {
         stop()
         running = true
-        worker = Thread({ connectLoop(host, port) }, "snap-connection").apply { isDaemon = true; start() }
+        worker = Thread({ connectLoop(host, port, credentials) }, "snap-connection").apply { isDaemon = true; start() }
     }
 
     fun stop() {
         running = false
         runCatching { socket?.close() }
+        // Wake it from a reconnect backoff, which can be longer than the join below.
+        worker?.let { if (it !== Thread.currentThread()) it.interrupt() }
         worker?.let { if (it !== Thread.currentThread()) it.join(2000) }
         worker = null
         buffer = null
@@ -144,9 +174,11 @@ class SnapEngine(
         send(MessageType.CLIENT_INFO, MessageWriter.jsonPayload(json))
     }
 
-    private fun connectLoop(host: String, port: Int) {
+    private fun connectLoop(host: String, port: Int, credentials: Credentials?) {
         var backoffMs = 500L
+        var authBackoffMs = AUTH_BACKOFF_MIN_MS
         while (running) {
+            var delayMs = backoffMs
             listener.onState(ConnectionState.Connecting(host, port))
             try {
                 val s = Socket()
@@ -157,7 +189,15 @@ class SnapEngine(
                 out = s.getOutputStream()
                 backoffMs = 500L
                 listener.onState(ConnectionState.Connected(host, port))
-                session(s)
+                session(s, credentials)
+            } catch (e: AuthFailedException) {
+                if (!running) break
+                // Wrong credentials won't fix themselves and a settings change restarts us anyway;
+                // keep retrying, slowly, in case the server's user list is being edited.
+                delayMs = authBackoffMs
+                authBackoffMs = (authBackoffMs * 2).coerceAtMost(AUTH_BACKOFF_MAX_MS)
+                listener.onAuthFailed(e.failure)
+                listener.onState(ConnectionState.Failed(host, port, e.failure.describe(), e.failure))
             } catch (e: Exception) {
                 if (!running) break
                 listener.onState(ConnectionState.Failed(host, port, e.message ?: e.javaClass.simpleName))
@@ -168,7 +208,7 @@ class SnapEngine(
             }
             if (!running) break
             try {
-                Thread.sleep(backoffMs)
+                Thread.sleep(delayMs)
             } catch (_: InterruptedException) {
                 break
             }
@@ -176,8 +216,8 @@ class SnapEngine(
         }
     }
 
-    private fun session(s: Socket) {
-        send(MessageType.HELLO, MessageWriter.jsonPayload(helloJson()))
+    private fun session(s: Socket, credentials: Credentials?) {
+        send(MessageType.HELLO, MessageWriter.jsonPayload(helloJson(identity, credentials)))
         val timeThread = Thread({ timeLoop(s) }, "snap-time").apply { isDaemon = true; start() }
         try {
             val input = DataInputStream(BufferedInputStream(s.getInputStream(), 64 * 1024))
@@ -217,7 +257,10 @@ class SnapEngine(
                         s2cUs = msg.header.receivedUs - msg.header.sentUs,
                         nowUs = msg.header.receivedUs,
                     )
-                    is ErrorMessage -> listener.onServerError("${msg.error}: ${msg.message}")
+                    is ErrorMessage -> {
+                        if (msg.isAuthError) throw AuthFailedException(AuthFailure(msg.code, msg.error, msg.message))
+                        listener.onServerError("${msg.error}: ${msg.message}")
+                    }
                     is UnknownMessage -> Unit
                 }
             }
@@ -248,19 +291,30 @@ class SnapEngine(
         }
     }
 
-    private fun helloJson(): String = buildJsonObject {
-        put("Arch", identity.arch)
-        put("ClientName", identity.clientName)
-        put("HostName", identity.hostName)
-        put("ID", identity.id)
-        put("Instance", identity.instance)
-        put("MAC", identity.mac)
-        put("OS", identity.os)
-        put("SnapStreamProtocolVersion", JsonPrimitive(2))
-        put("Version", identity.version)
-    }.toString()
+    private class AuthFailedException(val failure: AuthFailure) : Exception(failure.describe())
 
     companion object {
         private const val MIN_TIME_SAMPLES = 5
+        private const val AUTH_BACKOFF_MIN_MS = 30_000L
+        private const val AUTH_BACKOFF_MAX_MS = 300_000L
     }
 }
+
+/** The Hello payload, the same keys snapclient's msg::Hello sends. */
+internal fun helloJson(identity: ClientIdentity, credentials: Credentials?): String = buildJsonObject {
+    put("Arch", identity.arch)
+    if (credentials != null) {
+        put("Auth", buildJsonObject {
+            put("param", credentials.basicParam())
+            put("scheme", "Basic")
+        })
+    }
+    put("ClientName", identity.clientName)
+    put("HostName", identity.hostName)
+    put("ID", identity.id)
+    put("Instance", identity.instance)
+    put("MAC", identity.mac)
+    put("OS", identity.os)
+    put("SnapStreamProtocolVersion", JsonPrimitive(2))
+    put("Version", identity.version)
+}.toString()
