@@ -87,6 +87,10 @@ class Player(context: Context, private val prefs: Prefs) {
     }, decoders = PlatformDecoders).also { it.tap = visual }
 
     private val output = AudioOutput(engine)
+
+    init {
+        engine.syncEvents = { android.util.Log.i("SnapTV.Sync", it) }
+    }
     private val control = ControlClient(prefs.clientId) { room -> _state.update { it.copy(room = room) } }
     private var sessionJob: Job? = null
 
@@ -127,11 +131,18 @@ class Player(context: Context, private val prefs: Prefs) {
         }
         scope.launch {
             val probe = FloatArray(4800)
+            var statsTicks = 0
             var lastAudibleUs = Long.MIN_VALUE
             while (sessionJob?.isActive == true) {
                 val nowUs = System.nanoTime() / 1000
                 if (visual.window(nowUs, probe) && rms(probe) > AUDIBLE_RMS) lastAudibleUs = nowUs
                 val audible = lastAudibleUs != Long.MIN_VALUE && nowUs - lastAudibleUs < AUDIBLE_HOLD_US
+                if (++statsTicks % 10 == 0) engine.stats()?.let { y ->
+                    android.util.Log.i(
+                        "SnapTV.Sync",
+                        "median ${y.medianErrorUs}us ppm ${y.correctionPpm} queued ${y.queuedMs}ms resyncs ${y.hardSyncs} underruns ${y.underruns} rtt ${engine.timeSync.lastRttUs}us out ${output.bufferedMs}ms",
+                    )
+                }
                 _state.update {
                     it.copy(
                         sync = engine.stats(),

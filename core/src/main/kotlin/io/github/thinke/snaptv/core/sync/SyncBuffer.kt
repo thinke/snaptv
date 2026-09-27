@@ -51,6 +51,9 @@ class SyncBuffer(
     private var ppm = 0
     private var correctionAcc = 0.0
     private var hardSyncs = 0
+
+    /** Diagnostic hook: called (under the buffer's lock) for starts, resyncs and underruns. */
+    @Volatile var onEvent: ((String) -> Unit)? = null
     private var underruns = 0
 
     @Synchronized
@@ -89,6 +92,7 @@ class SyncBuffer(
             trackError(err)
             if (abs(err) > HARD_ERROR_US || (errorCount >= SHORT_WINDOW && abs(medianErrorUs) > MEDIAN_HARD_ERROR_US)) {
                 hardSyncs++
+                onEvent?.invoke("resync #$hardSyncs: error ${err}us median ${medianErrorUs}us (${if (abs(err) > HARD_ERROR_US) "jump" else "drift"})")
                 playing = false
                 current = null
                 resetErrors()
@@ -124,11 +128,13 @@ class SyncBuffer(
             out.fill(0, 0, silence * channels)
             current = queue.removeFirst()
             playing = true
+            onEvent?.invoke("start: ${lead}us early, $silence frames of silence first")
             silence
         } else {
             current = queue.removeFirst()
             offset = (-lead * rate / 1_000_000L).toInt()
             playing = true
+            onEvent?.invoke("start: ${-lead}us late, skipping $offset frames")
             0
         }
     }
@@ -149,6 +155,7 @@ class SyncBuffer(
                 offset = 0
                 if (c == null) {
                     underruns++
+                    onEvent?.invoke("underrun #$underruns: queue empty at frame $o of $frames")
                     playing = false
                     resetErrors()
                     out.fill(0, o * channels, frames * channels)

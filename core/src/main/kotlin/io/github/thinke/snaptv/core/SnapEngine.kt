@@ -128,6 +128,9 @@ class SnapEngine(
 
     @Volatile var tap: PlaybackTap? = null
 
+    /** Receives sync buffer diagnostics (starts, resyncs, underruns). */
+    @Volatile var syncEvents: ((String) -> Unit)? = null
+
     @Volatile private var running = false
     private var worker: Thread? = null
     @Volatile private var socket: Socket? = null
@@ -262,10 +265,11 @@ class SnapEngine(
                         }
                         decoder = d
                         placer = ChunkPlacer(d, format)
-                        buffer = SyncBuffer(format)
+                        buffer = SyncBuffer(format).also { it.onEvent = syncEvents }
                         listener.onFormat(format, msg.codec)
                     }
                     is WireChunk -> {
+                        trackArrival(msg)
                         val p = placer ?: continue
                         val b = buffer ?: continue
                         // A decoder that keeps failing ends the session, so it shows as Failed.
@@ -298,6 +302,27 @@ class SnapEngine(
         } finally {
             timeThread.interrupt()
             decoder?.close()
+        }
+    }
+
+    // Diagnostics: how late chunks arrive after their timestamp (server clock), per 5 s.
+    private var arrivalMin = Long.MAX_VALUE
+    private var arrivalMax = Long.MIN_VALUE
+    private var arrivalCount = 0
+    private var arrivalSince = 0L
+
+    private fun trackArrival(msg: WireChunk) {
+        if (timeSync.sampleCount < MIN_TIME_SAMPLES) return
+        val ageUs = timeSync.toServer(msg.header.receivedUs) - msg.timestampUs
+        arrivalMin = minOf(arrivalMin, ageUs)
+        arrivalMax = maxOf(arrivalMax, ageUs)
+        arrivalCount++
+        if (msg.header.receivedUs - arrivalSince >= 5_000_000L) {
+            syncEvents?.invoke("chunk arrival age ${arrivalMin / 1000}..${arrivalMax / 1000} ms over $arrivalCount chunks")
+            arrivalSince = msg.header.receivedUs
+            arrivalMin = Long.MAX_VALUE
+            arrivalMax = Long.MIN_VALUE
+            arrivalCount = 0
         }
     }
 

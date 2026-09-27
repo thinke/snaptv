@@ -62,6 +62,7 @@ fun main(args: Array<String>) {
         clock,
     )
     println("server: $address")
+    engine.syncEvents = { if ("arrival" in it) println(it) }
     engine.start(address, tls, credentials)
 
     val blockFrames = 480

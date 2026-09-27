@@ -159,6 +159,10 @@ private fun statusLine(s: PlayerState): String {
         is ConnectionState.Connecting -> "Connecting to ${c.host}…"
         is ConnectionState.Failed -> if (c.host.isEmpty()) "${c.reason}. Still looking…" else "Can't reach ${c.host}: ${c.reason}. Retrying…"
         is ConnectionState.Connected -> {
+            // The server buffer must cover this device's output delay plus the network.
+            if (s.outputBufferMs > 0 && s.outputBufferMs > s.server.bufferMs - 80) {
+                return "Server buffer (${s.server.bufferMs} ms) is too short for this TV's output delay (${s.outputBufferMs} ms): raise buffer in snapserver.conf"
+            }
             val fmt = s.format?.let { " · ${it.rate / 1000.0} kHz ${s.codec?.uppercase()}" } ?: ""
             when {
                 s.audible -> "Playing from ${c.host}$fmt"

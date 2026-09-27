@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTimestamp
 import android.media.AudioTrack
+import android.os.Build
 import android.os.Process
 import android.util.Log
 import io.github.thinke.snaptv.core.SnapEngine
@@ -68,7 +69,8 @@ class AudioOutput(private val engine: SnapEngine) {
     private fun createTrack(f: SampleFormat): AudioTrack {
         val mask = if (f.channels == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
         val min = AudioTrack.getMinBufferSize(f.rate, mask, AudioFormat.ENCODING_PCM_16BIT)
-        // Enough headroom to ride out a GC pause, small enough that routing changes settle fast.
+        // Capacity for a GC pause or a slow HAL; how much of it we actually fill is set by
+        // TARGET_QUEUE_MS in play().
         val bytes = maxOf(min * 2, f.rate * f.channels * 2 / 10)
         return AudioTrack.Builder()
             .setAudioAttributes(
@@ -99,9 +101,41 @@ class AudioOutput(private val engine: SnapEngine) {
         var haveTs = false
         var lastPollUs = 0L
         var appliedGain = -1f
+        var lastUnderruns = 0
+        // Keep only this much unplayed audio in the track. Keeping it full would add its whole
+        // capacity (hundreds of ms on some TVs) to the output delay, which has to fit inside
+        // the server's buffer together with the network: with snapserver's buffer at 400 ms a
+        // TCL TV then ran its queue dry every second.
+        val targetFrames = maxOf(blockFrames * 4, f.rate * TARGET_QUEUE_MS / 1000).toLong()
+        var headWraps = 0L
+        var lastHead = 0L
+        fun playedFrames(): Long {
+            // playbackHeadPosition is an unsigned 32-bit counter that wraps.
+            val h = track.playbackHeadPosition.toLong() and 0xffffffffL
+            if (h < lastHead) headWraps += 1L shl 32
+            lastHead = h
+            return headWraps + h
+        }
+        // A stream track only starts once its start threshold (by default the whole buffer) is
+        // filled; with pacing it would never get there. Lower it where we can, and elsewhere
+        // don't pace until the track is actually playing.
+        if (Build.VERSION.SDK_INT >= 31) {
+            runCatching { track.startThresholdInFrames = targetFrames.toInt() }
+        }
         track.play()
+        Log.i(TAG, "opened $f: capacity ${track.bufferSizeInFrames} frames, queue target $targetFrames, start threshold ${if (Build.VERSION.SDK_INT >= 31) track.startThresholdInFrames else -1}")
 
         while (running && engine.buffer?.format == f) {
+            val played = playedFrames()
+            val pending = written - played
+            if (played > 0 && pending > targetFrames) {
+                try {
+                    Thread.sleep(maxOf(1L, (pending - targetFrames) * 1000 / f.rate))
+                } catch (_: InterruptedException) {
+                    return
+                }
+                continue
+            }
             val g = gain
             if (g != appliedGain) { track.setVolume(g); appliedGain = g }
 
@@ -109,9 +143,23 @@ class AudioOutput(private val engine: SnapEngine) {
             if (!haveTs || nowUs - lastPollUs > TIMESTAMP_POLL_US) {
                 lastPollUs = nowUs
                 if (track.getTimestamp(ts) && ts.framePosition > 0) {
+                    val newUs = ts.nanoTime / 1000
+                    if (haveTs) {
+                        // Where the old timestamp says this frame should have played.
+                        val predictedUs = tsUs + (ts.framePosition - tsFrame) * 1_000_000L / f.rate
+                        val jumpUs = newUs - predictedUs
+                        if (kotlin.math.abs(jumpUs) > TIMESTAMP_JUMP_LOG_US) {
+                            Log.w(TAG, "timestamp jump ${jumpUs}us (frame ${ts.framePosition})")
+                        }
+                    }
                     tsFrame = ts.framePosition
-                    tsUs = ts.nanoTime / 1000
+                    tsUs = newUs
                     haveTs = true
+                }
+                val u = track.underrunCount
+                if (u != lastUnderruns) {
+                    Log.w(TAG, "AudioTrack underruns: $u (+${u - lastUnderruns})")
+                    lastUnderruns = u
                 }
             }
 
@@ -133,5 +181,7 @@ class AudioOutput(private val engine: SnapEngine) {
     private companion object {
         const val TAG = "SnapTV.Audio"
         const val TIMESTAMP_POLL_US = 250_000L
+        const val TIMESTAMP_JUMP_LOG_US = 1_000L
+        const val TARGET_QUEUE_MS = 80
     }
 }
