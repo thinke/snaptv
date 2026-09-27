@@ -1,7 +1,9 @@
 package io.github.thinke.snaptv.cli
 
+import io.github.thinke.snaptv.core.AuthFailure
 import io.github.thinke.snaptv.core.ClientIdentity
 import io.github.thinke.snaptv.core.ConnectionState
+import io.github.thinke.snaptv.core.Credentials
 import io.github.thinke.snaptv.core.MonotonicClock
 import io.github.thinke.snaptv.core.ServerSettings
 import io.github.thinke.snaptv.core.SnapEngine
@@ -18,19 +20,20 @@ import javax.sound.sampled.SourceDataLine
 /**
  * Desktop harness for the core engine.
  *
- *   cli <host> [--port 1704] [--seconds N] [--play] [--wav out.wav] [--id ID]
+ *   cli <host> [--port 1704] [--seconds N] [--play] [--wav out.wav] [--id ID] [--user U --password P]
  *
  * Without --play it simulates an output device with a fixed 100 ms buffer, which is enough to
  * exercise time sync and the sync buffer against a real server.
  */
 fun main(args: Array<String>) {
-    val host = args.firstOrNull { !it.startsWith("--") } ?: error("usage: cli <host> [--port P] [--seconds N] [--play] [--wav file] [--id ID]")
+    val host = args.firstOrNull { !it.startsWith("--") } ?: error("usage: cli <host> [--port P] [--seconds N] [--play] [--wav file] [--id ID] [--user U] [--password P]")
     fun opt(name: String) = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
     val port = opt("--port")?.toInt() ?: 1704
     val seconds = opt("--seconds")?.toInt() ?: 0
     val play = "--play" in args
     val wav = opt("--wav")?.let { WavWriter(File(it)) }
     val id = opt("--id") ?: "snaptv-cli"
+    val credentials = Credentials.of(opt("--user") ?: "", opt("--password") ?: "")
 
     val clock = MonotonicClock.System
     var format: SampleFormat? = null
@@ -41,10 +44,11 @@ fun main(args: Array<String>) {
             override fun onFormat(format: SampleFormat, codec: String) { println("format: $format codec=$codec"); }
             override fun onSettings(settings: ServerSettings) = println("settings: $settings")
             override fun onServerError(message: String) = println("server error: $message")
+            override fun onAuthFailed(failure: AuthFailure) = println("auth failed: ${failure.code} ${failure.error}: ${failure.message}")
         },
         clock,
     )
-    engine.start(host, port)
+    engine.start(host, port, credentials)
 
     val blockFrames = 480
     val deadline = if (seconds > 0) clock.nowUs() + seconds * 1_000_000L else Long.MAX_VALUE

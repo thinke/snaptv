@@ -57,7 +57,19 @@ class ServerSettingsMessage(override val header: BaseHeader, val json: String) :
 /** Server's reply to our time request; [latencyUs] = server receive time - our send time. */
 class TimeMessage(override val header: BaseHeader, val latencyUs: Long) : ServerMessage
 
-class ErrorMessage(override val header: BaseHeader, val code: Int, val error: String, val message: String) : ServerMessage
+/**
+ * Sent by snapserver in reply to Hello when auth is enabled and fails: 401 "Unauthorized"
+ * (missing or wrong credentials) or 403 "Forbidden" (user lacks the Streaming permission).
+ * The server closes the connection right after it.
+ */
+class ErrorMessage(override val header: BaseHeader, val code: Int, val error: String, val message: String) : ServerMessage {
+    val isAuthError: Boolean get() = code == UNAUTHORIZED || code == FORBIDDEN
+
+    companion object {
+        const val UNAUTHORIZED = 401
+        const val FORBIDDEN = 403
+    }
+}
 
 class UnknownMessage(override val header: BaseHeader) : ServerMessage
 
