@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.material3.ListItem
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.github.thinke.snaptv.CalibrationOutcome
@@ -88,6 +87,7 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     val delay by player.audioDelayMs.collectAsStateWithLifecycle()
     val room = player.state.collectAsStateWithLifecycle().value.room
     fun adjust(step: Int) = player.adjustAudioDelay(step)
+    val touch = hasTouch()
 
     Row(Modifier.fillMaxSize().background(Color(0xFF0D0F1A)).padding(horizontal = 56.dp, vertical = 36.dp)) {
         Column(Modifier.width(340.dp).padding(end = 32.dp)) {
@@ -107,6 +107,7 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
             )
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (touch) item { DelayButtons(::adjust, Modifier.padding(bottom = 6.dp)) }
             item { Stepper("Fine", "◀ ▶ changes by 10 ms", 10, ::adjust, Modifier.focusRequester(first)) }
             item { Stepper("Coarse", "◀ ▶ changes by 50 ms", 50, ::adjust) }
             // The sync test through snapcast (RoomSyncTestScreen) is hidden until it is reliable.

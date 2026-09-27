@@ -14,6 +14,9 @@ what is playing instead of a blank menu.
 
 - **Built for the remote.** Everything works with the D-pad: ◀ ▶ changes the visualizer,
   ▲ ▼ changes volume, OK opens settings.
+- **Remote, touch or mouse.** It also runs on phones, tablets and plain Android boxes: tap
+  opens settings, swipe changes visualizer (sideways) or volume (up/down), the mouse wheel
+  changes volume, and delay screens get on-screen −/+ buttons. Always landscape.
 - **Plays in the background.** Audio runs in a foreground service, keeps going while the TV
   shows other apps, and can start at boot.
 - **In sync, including the TV's own delay.** Soundbars (especially over HDMI ARC) and TV sound

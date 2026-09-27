@@ -30,6 +30,11 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,6 +53,7 @@ fun NowPlayingScreen(player: Player, prefs: Prefs, onOpenSettings: () -> Unit) {
     val settings by prefs.settings.collectAsStateWithLifecycle()
     val style = VisualStyle.of(settings.visualStyle)
     val focus = remember { FocusRequester() }
+    val touch = hasTouch()
 
     // Any key press shows the overlay for a few seconds; it also stays up while nothing plays.
     var pokes by remember { mutableIntStateOf(0) }
@@ -72,6 +78,38 @@ fun NowPlayingScreen(player: Player, prefs: Prefs, onOpenSettings: () -> Unit) {
             .background(Color.Black)
             .focusRequester(focus)
             .focusable()
+            .pointerInput(Unit) {
+                // Touch and mouse: tap opens Settings; swipe sideways changes the visualizer,
+                // up/down changes volume.
+                detectTapGestures(onTap = { onOpenSettings() })
+            }
+            .pointerInput(Unit) {
+                var dx = 0f
+                var dy = 0f
+                detectDragGestures(
+                    onDragStart = { dx = 0f; dy = 0f },
+                    onDragEnd = {
+                        val threshold = 80.dp.toPx()
+                        when {
+                            abs(dx) > abs(dy) && abs(dx) > threshold ->
+                                prefs.update { it.copy(visualStyle = it.visualStyle + if (dx < 0) 1 else -1) }
+                            abs(dy) > threshold -> { player.changeVolume(if (dy < 0) 10 else -10); volumeToast++ }
+                        }
+                        pokes++
+                    },
+                ) { _, drag -> dx += drag.x; dy += drag.y }
+            }
+            .pointerInput(Unit) {
+                // Mouse wheel: volume.
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        if (e.type != PointerEventType.Scroll) continue
+                        val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                        if (dy != 0f) { player.changeVolume(if (dy < 0) 5 else -5); volumeToast++; pokes++ }
+                    }
+                }
+            }
             .onKeyEvent { e ->
                 // OK opens Settings on release: opening on press would hand the release to
                 // Settings' first item (Server), which TV list items treat as a click.
@@ -117,9 +155,15 @@ fun NowPlayingScreen(player: Player, prefs: Prefs, onOpenSettings: () -> Unit) {
                     Modifier.align(Alignment.BottomStart).fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Hint("◀ ▶  ${style.label}")
-                    Hint("▲ ▼  volume ${Player.volumeLabel(state.server)}")
-                    Hint("OK  settings")
+                    if (touch) {
+                        Hint("Swipe ◀ ▶  ${style.label}")
+                        Hint("Swipe ▲ ▼  volume ${Player.volumeLabel(state.server)}")
+                        Hint("Tap  settings")
+                    } else {
+                        Hint("◀ ▶  ${style.label}")
+                        Hint("▲ ▼  volume ${Player.volumeLabel(state.server)}")
+                        Hint("OK  settings")
+                    }
                 }
             }
         }

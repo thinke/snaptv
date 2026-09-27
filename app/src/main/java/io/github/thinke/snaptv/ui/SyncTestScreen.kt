@@ -123,6 +123,9 @@ fun SyncTestScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
         }
+        if (hasTouch()) {
+            DelayButtons(::adjust, Modifier.align(Alignment.BottomCenter).padding(bottom = 110.dp))
+        }
         Text(
             "This lines up the sound with this TV's picture. TVs delay the picture a little too; for the most accurate result turn on the TV's game mode during the test.",
             color = Color.White.copy(alpha = 0.5f),
