@@ -68,6 +68,15 @@ class ControlClient(
         put("stream_id", streamId)
     }
 
+    /**
+     * This client's latency on the server (Snapweb's latency slider). snapserver stores it and
+     * sends it to our stream connection in ServerSettings, which is what playback uses.
+     */
+    fun setLatency(ms: Int) = request("Client.SetLatency") {
+        put("id", clientId)
+        put("latency", ms)
+    }
+
     fun setName(name: String) = request("Client.SetName") {
         put("id", clientId)
         put("name", name)

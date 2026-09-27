@@ -63,6 +63,7 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     val context = LocalContext.current
     val settings by prefs.settings.collectAsStateWithLifecycle()
     val state by player.state.collectAsStateWithLifecycle()
+    val delay by player.audioDelayMs.collectAsStateWithLifecycle()
     val servers by remember { Discovery(context).servers() }.collectAsState(emptyList())
     var picker by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
@@ -194,7 +195,7 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                     onClick = { delayScreen = true },
                     headlineContent = { Text("Audio delay") },
                     supportingContent = { Text("Raise it if this TV sounds later than the other rooms. OK to measure or tune by ear; ◀ ▶ adjusts here in 10 ms steps.") },
-                    trailingContent = { Text("${if (settings.latencyMs > 0) "+" else ""}${settings.latencyMs} ms") },
+                    trailingContent = { Text("${if (delay > 0) "+" else ""}$delay ms") },
                     modifier = Modifier.onPreviewKeyEvent { e ->
                         if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         val step = when (e.key) {
@@ -202,7 +203,7 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                             Key.DirectionLeft -> -10
                             else -> return@onPreviewKeyEvent false
                         }
-                        prefs.update { it.copy(latencyMs = (it.latencyMs + step).coerceIn(-500, 2000)) }
+                        player.adjustAudioDelay(step)
                         true
                     },
                 )

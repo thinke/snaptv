@@ -48,7 +48,6 @@ import kotlin.math.max
 @Composable
 fun SyncTestScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-    val settings by prefs.settings.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
     var frameNanos by remember { mutableLongStateOf(0L) }
     var frameDurationNanos by remember { mutableLongStateOf(16_666_667L) }
@@ -68,7 +67,8 @@ fun SyncTestScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
         }
     }
 
-    fun adjust(step: Int) = prefs.update { it.copy(latencyMs = (it.latencyMs + step).coerceIn(-500, 2000)) }
+    val delay by player.audioDelayMs.collectAsStateWithLifecycle()
+    fun adjust(step: Int) = player.adjustAudioDelay(step)
 
     Box(
         Modifier
@@ -113,7 +113,7 @@ fun SyncTestScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
         Column(Modifier.align(Alignment.TopCenter).padding(top = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Sync test", style = MaterialTheme.typography.headlineMedium, color = Color.White)
             Text(
-                "${if (settings.latencyMs > 0) "+" else ""}${settings.latencyMs} ms",
+                "${if (delay > 0) "+" else ""}$delay ms",
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 48.sp,
             )

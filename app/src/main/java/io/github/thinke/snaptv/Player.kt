@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -77,6 +78,7 @@ class Player(context: Context, private val prefs: Prefs) {
         override fun onFormat(format: SampleFormat, codec: String) =
             _state.update { it.copy(format = format, codec = codec, serverError = null, authError = null) }
         override fun onSettings(settings: ServerSettings) {
+            if (settings.latencyMs == pendingDelayMs) pendingDelayMs = null
             _state.update { it.copy(server = settings) }
             applyVolume(settings)
         }
@@ -122,6 +124,17 @@ class Player(context: Context, private val prefs: Prefs) {
         // Latency calibration applies live, no reconnect needed.
         scope.launch {
             prefs.settings.map { it.latencyMs }.distinctUntilChanged().collect { engine.outputLatencyMs = it }
+        }
+        // Audio delay lives on the server (the client's latency, as in Snapweb). A value kept
+        // locally, from before, or set while the control API was unreachable, moves there once
+        // we can reach it, so it is never applied twice.
+        scope.launch {
+            state.map { it.room != null && it.connection is ConnectionState.Connected }.distinctUntilChanged().collect { online ->
+                val local = prefs.settings.value.latencyMs
+                if (online && local != 0) {
+                    setAudioDelay(state.value.server.latencyMs + local)
+                }
+            }
         }
     }
 
@@ -206,6 +219,27 @@ class Player(context: Context, private val prefs: Prefs) {
         scope.launch(Dispatchers.IO) { control.setStream(room.groupId, streamId) }
     }
 
+    /** Total delay compensated after the DAC: the server-side latency plus any local fallback. */
+    val audioDelayMs: StateFlow<Int> = kotlinx.coroutines.flow.combine(state, prefs.settings) { s, p -> s.server.latencyMs + p.latencyMs }
+        .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, 0)
+
+    // Last value sent to the server and not yet echoed back, so quick ◀ ▶ presses add up.
+    @Volatile private var pendingDelayMs: Int? = null
+
+    fun setAudioDelay(ms: Int) {
+        val room = state.value.room
+        if (room != null && state.value.connection is ConnectionState.Connected) {
+            val v = ms.coerceIn(0, MAX_DELAY_MS)
+            pendingDelayMs = v
+            if (prefs.settings.value.latencyMs != 0) prefs.update { it.copy(latencyMs = 0) }
+            scope.launch(Dispatchers.IO) { control.setLatency(v) }
+        } else {
+            prefs.update { it.copy(latencyMs = ms.coerceIn(-500, MAX_DELAY_MS)) }
+        }
+    }
+
+    fun adjustAudioDelay(stepMs: Int) = setAudioDelay((pendingDelayMs ?: audioDelayMs.value) + stepMs)
+
     /** The name shown for this TV in Snapweb and other controllers. */
     fun setName(name: String) {
         scope.launch(Dispatchers.IO) { control.setName(name) }
@@ -253,6 +287,7 @@ class Player(context: Context, private val prefs: Prefs) {
 
     companion object {
         const val SYNC_TEST_PERIOD_US = 1_000_000L
+        const val MAX_DELAY_MS = 2000
         private const val AUDIBLE_RMS = 0.001f // about -60 dBFS
         private const val AUDIBLE_HOLD_US = 8_000_000L
 

@@ -50,7 +50,6 @@ import kotlinx.coroutines.launch
 fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
-    val settings by prefs.settings.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
     var measuring by remember { mutableStateOf(false) }
@@ -69,7 +68,7 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
             val outcome = player.calibrator(context).run { status = it }
             status = when (outcome) {
                 is CalibrationOutcome.Measured -> {
-                    prefs.update { it.copy(latencyMs = outcome.delayMs.coerceIn(MIN_MS, MAX_MS)) }
+                    player.setAudioDelay(outcome.delayMs)
                     "Measured ${outcome.delayMs} ms (${outcome.heard} of ${outcome.total} test sounds, within ${"%.1f".format(outcome.spreadMs)} ms) and applied. Fine-tune by ear if needed."
                 }
                 is CalibrationOutcome.Failed -> outcome.reason
@@ -81,20 +80,23 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
         if (granted) measure() else status = "Microphone permission was denied. You can still adjust by ear."
     }
 
-    fun adjust(step: Int) = prefs.update { it.copy(latencyMs = (it.latencyMs + step).coerceIn(MIN_MS, MAX_MS)) }
+    val delay by player.audioDelayMs.collectAsStateWithLifecycle()
+    val room = player.state.collectAsStateWithLifecycle().value.room
+    fun adjust(step: Int) = player.adjustAudioDelay(step)
 
     Row(Modifier.fillMaxSize().background(Color(0xFF0D0F1A)).padding(horizontal = 56.dp, vertical = 36.dp)) {
         Column(Modifier.width(340.dp).padding(end = 32.dp)) {
             Text("Audio delay", style = MaterialTheme.typography.headlineLarge, color = Color.White)
             Text(
-                "${if (settings.latencyMs > 0) "+" else ""}${settings.latencyMs} ms",
+                "${if (delay > 0) "+" else ""}$delay ms",
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 56.sp,
                 modifier = Modifier.padding(vertical = 16.dp),
             )
             Text(
                 "Soundbars and TV sound processing delay the sound after the TV sends it. SnapTV plays that much earlier to stay in step with the other rooms.\n\n" +
-                    "By ear: stand where you hear this TV and another room at the same time, and adjust until they sound like one. Raise the delay if the TV is behind.",
+                    "By ear: stand where you hear this TV and another room at the same time, and adjust until they sound like one. Raise the delay if the TV is behind.\n\n" +
+                    (if (room != null) "Stored on the server as this TV's latency, so Snapweb shows and changes the same value." else "The server's control connection isn't available, so this is stored on the TV for now."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.65f),
             )
@@ -127,7 +129,7 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
             item {
                 ListItem(
                     selected = false,
-                    onClick = { prefs.update { it.copy(latencyMs = 0) }; status = null },
+                    onClick = { player.setAudioDelay(0); status = null },
                     headlineContent = { Text("Reset to 0 ms") },
                 )
             }
@@ -155,5 +157,3 @@ private fun Stepper(title: String, hint: String, step: Int, adjust: (Int) -> Uni
     )
 }
 
-private const val MIN_MS = -500
-private const val MAX_MS = 2000
