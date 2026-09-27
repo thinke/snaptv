@@ -21,6 +21,8 @@ import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material.LocalContentColor
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +50,9 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
     val delay by session.audioDelayMs.collectAsState()
     val room = state.room
 
+    // Text fields take their text, label and cursor colour from LocalContentColor, which is black
+    // unless set: on this dark panel it has to be white.
+    CompositionLocalProvider(LocalContentColor provides Color.White) {
     Column(
         Modifier.fillMaxSize().background(Color(0xFF0D0F1A)).verticalScroll(rememberScrollState()).padding(horizontal = 56.dp, vertical = 36.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -163,6 +168,7 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
             Text("SnapTV Desktop $VERSION · client id ${session.clientId}", color = Color.White.copy(alpha = 0.7f))
             Text(statsText(state), color = Color.White.copy(alpha = 0.5f))
         }
+    }
     }
 }
 

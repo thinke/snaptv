@@ -63,7 +63,7 @@ import javax.jmdns.JmDNS
  * SnapTV Desktop: a Snapcast room with SnapTV's visualizer, full screen on the monitor you
  * choose. The playback and control logic is core's [SnapSession], shared with the TV app.
  *
- *   snaptv-desktop [--server host] [--monitor N] [--windowed] [--tray]
+ *   snaptv-desktop [--server host] [--monitor N] [--windowed] [--tray] [--settings]
  *
  * Keys: ← → style · ↑ ↓ volume · S or Enter settings · M next monitor · F11 full screen · Esc back.
  * Closing the window only hides it: SnapTV keeps playing from the system tray, and quits from the
@@ -102,10 +102,10 @@ fun main(args: Array<String>) {
         val settings by prefs.settings.collectAsState()
         val screens = remember { GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds } }
         val monitor = (if (settings.monitor < 0) (if (screens.size > 1) 1 else 0) else settings.monitor).coerceIn(0, screens.size - 1)
-        var settingsOpen by remember { mutableStateOf(false) }
+        var settingsOpen by remember { mutableStateOf("--settings" in args) }
         var pokes by remember { mutableIntStateOf(0) }
         // Shown unless started with --tray; closing hides to the tray and keeps playing.
-        var visible by remember { mutableStateOf("--tray" !in args) }
+        var visible by remember { mutableStateOf("--tray" !in args || "--settings" in args) }
         val icon = remember { BitmapPainter(useResource("snaptv-icon.png") { loadImageBitmap(it) }) }
         // Java's Linux tray (XEmbed) has no transparency, so the tray icon is opaque edge to edge.
         val trayIcon = remember { BitmapPainter(useResource("snaptv-tray.png") { loadImageBitmap(it) }) }
