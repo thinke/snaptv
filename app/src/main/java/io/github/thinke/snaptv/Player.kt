@@ -66,7 +66,7 @@ class Player(context: Context, private val prefs: Prefs) {
             applyVolume(settings)
         }
         override fun onServerError(message: String) = _state.update { it.copy(serverError = message) }
-    }).also { it.tap = visual }
+    }, decoders = PlatformDecoders).also { it.tap = visual }
 
     private val output = AudioOutput(engine)
     private val control = ControlClient(prefs.clientId) { room -> _state.update { it.copy(room = room) } }
