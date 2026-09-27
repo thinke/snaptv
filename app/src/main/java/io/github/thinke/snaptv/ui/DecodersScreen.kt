@@ -86,7 +86,11 @@ fun DecodersScreen(prefs: Prefs, onBack: () -> Unit) {
                     onClick = {
                         testing = true
                         scope.launch {
-                            results = withContext(Dispatchers.Default) { DecoderSelfTest.runAll(context) }
+                            results = withContext(Dispatchers.Default) { DecoderSelfTest.runAll(context) }.also { rs ->
+                                rs.forEach { r ->
+                                    android.util.Log.i("SnapTV.DecoderTest", "${if (r.ok) "OK  " else "FAIL"} ${r.codec} | ${r.option.label} | ${r.detail} | speed ${r.speed?.let { "%.0fx".format(it) }} | delay ${r.delayMs?.let { "%.1fms".format(it) }}")
+                                }
+                            }
                             testing = false
                         }
                     },
@@ -102,13 +106,20 @@ fun DecodersScreen(prefs: Prefs, onBack: () -> Unit) {
                 )
             }
             results?.let { rs ->
+                // Focusable rows, so the D-pad can scroll through all of them.
                 items(rs, key = { "${it.codec}/${it.option.id}" }) { r ->
                     val speed = r.speed?.let { " · %.0f× real time".format(it) } ?: ""
                     val delay = r.delayMs?.let { " · delay %.0f ms".format(it) } ?: ""
-                    Text(
-                        "${if (r.ok) "✓" else "✗"}  ${DecoderCatalog.title(r.codec)} · ${r.option.label}\n     ${r.detail}$speed$delay",
-                        color = if (r.ok) Color.White.copy(alpha = 0.85f) else Color(0xFFFF8A80),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    ListItem(
+                        selected = false,
+                        onClick = {},
+                        headlineContent = {
+                            Text(
+                                "${if (r.ok) "✓" else "✗"}  ${DecoderCatalog.title(r.codec)} · ${r.option.label}",
+                                color = if (r.ok) Color.Unspecified else Color(0xFFFF8A80),
+                            )
+                        },
+                        supportingContent = { Text("${r.detail}$speed$delay") },
                     )
                 }
             }
