@@ -39,7 +39,7 @@ table below with every such change.
 | Visualizer choice, volume in Settings | ✅ | ✅ | |
 | Screensaver (DreamService) | ✅ | n/a | Android only |
 | Update check from GitHub releases | ✅ | ❌ | desktop ships as AppImage |
-| Remote / touch / mouse / keyboard input | ✅ D-pad, touch, mouse | ✅ keyboard | |
+| Remote / touch / mouse / keyboard input | ✅ D-pad, touch, mouse | ✅ keyboard, mouse | |
 | Multi-monitor full screen | n/a | ✅ | desktop only |
 | Start at boot / background playback | ✅ | ❌ | desktop runs while its window is open |
 | Hidden: sync test through snapcast | ⏸ | ⏸ | parked; `SHOW_SNAPCAST_SYNC_TEST` |
