@@ -1,0 +1,58 @@
+# SnapTV
+
+Snapcast client apps: **SnapTV** for Android TV (also phones, tablets, Android boxes) and
+**SnapTV Desktop** for Linux. Both are synchronised Snapcast rooms with a visualizer.
+
+## Layout
+
+| Module | What | Platform |
+|---|---|---|
+| `core/` | Protocol, clock sync, sync buffer, FLAC/PCM/Ogg/Opus headers, transports (tcp/ws/wss), auth, JSON-RPC control client, visual maths (FFT, `VisualBuffer`), click-track source | Plain Kotlin/JVM, no Android. Unit tested. |
+| `shared/visuals/` | `Visualizer.kt`: the Compose visualizer, compiled into both apps | Compose (Android and Desktop) |
+| `app/` | Android app: AudioTrack output, MediaCodec/FFmpeg decoders, Compose for TV UI, services, updater | Android |
+| `desktop/` | Linux app: PulseAudio/PipeWire output (JNA), mDNS (JmDNS), Compose Desktop window | JVM desktop |
+| `cli/` | Desktop test client (stats, `--wav`, `--play`) | JVM |
+
+## Feature parity
+
+**The Android and desktop apps stay at feature parity.** When a feature is added or changed in
+one, add it to the other in the same change, or record here why it doesn't apply. Put the logic
+in `core/` (or `shared/` for UI) so both use the same code; keep platform code thin. Update the
+table below with every such change.
+
+| Feature | Android | Desktop | Notes |
+|---|---|---|---|
+| Synced playback (clock sync, sync buffer, drift correction) | ✅ | ✅ | `core` |
+| Output timing from the audio device | ✅ AudioTrack timestamps | ✅ `pa_simple_get_latency` | |
+| Codecs: FLAC, PCM | ✅ | ✅ | `core` decoders |
+| Codecs: Opus, Ogg Vorbis | ✅ MediaCodec | ❌ | needs native libopus/libvorbis or FFmpeg on desktop |
+| Selectable decoders + on-device decoder self-test | ✅ | ❌ | desktop has only `core` decoders so far |
+| Transports: tcp, ws, wss; auth | ✅ | ⚠️ tcp only in UI | `core` supports all; desktop has no way to enter a URL/login yet |
+| Server discovery (mDNS) | ✅ NSD | ✅ JmDNS | |
+| Visualizers: Spectrum, Halo, Oscilloscope | ✅ | ✅ | `shared/visuals` |
+| Room/track names, source switching, rename (JSON-RPC) | ✅ | ⚠️ names only | |
+| Audio delay stored as server latency, adjustable | ✅ | ❌ | desktop honours the server value but can't change it |
+| Picture sync test / microphone measurement | ✅ | ❌ | |
+| Volume from server + local control reported to server | ✅ | ✅ | |
+| Stats overlay | ✅ | ⚠️ output latency only | |
+| Screensaver (DreamService) | ✅ | n/a | Android only |
+| Update check from GitHub releases | ✅ | ❌ | desktop ships as AppImage |
+| Remote / touch / mouse / keyboard input | ✅ D-pad, touch, mouse | ✅ keyboard | |
+| Multi-monitor full screen | n/a | ✅ | desktop only |
+| Start at boot / background playback | ✅ | ❌ | desktop runs while its window is open |
+| Hidden: sync test through snapcast | ⏸ | ⏸ | parked; `SHOW_SNAPCAST_SYNC_TEST` |
+
+## Building
+
+System Java on the dev machine is a JRE only: use `JAVA_HOME=~/tools/jdk-21`.
+
+```sh
+./gradlew :core:test                         # unit tests
+./gradlew :app:assembleDebug                 # Android debug APK
+ANDROID_SERIAL=emulator-5556 ./gradlew :app:connectedDebugAndroidTest   # on one device only
+./gradlew :desktop:run --args="--server HOST --windowed"
+desktop/packaging/make-appimage.sh           # SnapTV-Desktop-x86_64.AppImage (needs appimagetool)
+```
+
+Release: push to `main`, wait for CI to pass, then tag `vX.Y.Z`; the Release workflow builds,
+signs and publishes. Signing keys come from repository secrets (local copy in `~/tools/keys`).

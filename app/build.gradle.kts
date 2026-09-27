@@ -46,6 +46,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // The visualizer is shared with the desktop app (same Compose drawing API on both).
+    sourceSets.getByName("main").kotlin.srcDir("../shared/visuals")
+
     buildFeatures {
         compose = true
         buildConfig = true

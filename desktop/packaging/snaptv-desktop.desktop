@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SnapTV Desktop
+Comment=Snapcast room with a visualizer
+Exec=snaptv-desktop
+Icon=snaptv-desktop
+Categories=AudioVideo;Audio;Player;
+Terminal=false

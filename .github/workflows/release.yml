@@ -42,11 +42,19 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "snaptv-$SNAPTV_VERSION_NAME.apk"
           sha256sum "snaptv-$SNAPTV_VERSION_NAME.apk" > "snaptv-$SNAPTV_VERSION_NAME.apk.sha256"
 
+      - name: Desktop AppImage
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          APPIMAGETOOL="$RUNNER_TEMP/appimagetool" desktop/packaging/make-appimage.sh "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage"
+          sha256sum "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage" > "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage.sha256"
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "snaptv-$SNAPTV_VERSION_NAME.apk" "snaptv-$SNAPTV_VERSION_NAME.apk.sha256" \
+            "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage" "SnapTV-Desktop-$SNAPTV_VERSION_NAME-x86_64.AppImage.sha256" \
             --title "SnapTV $SNAPTV_VERSION_NAME" --generate-notes \
             $([[ "$SNAPTV_VERSION_NAME" == *-* ]] && echo --prerelease)

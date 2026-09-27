@@ -34,6 +34,14 @@ what is playing instead of a blank menu.
 - **Finds your server.** Discovers snapserver over mDNS (`_snapcast._tcp`), or you can enter
   an address.
 
+## SnapTV Desktop (Linux)
+
+The same room and visualizers on a Linux desktop, full screen on the monitor you choose. Download
+`SnapTV-Desktop-<version>-x86_64.AppImage` from Releases, `chmod +x` it and run it. It plays
+through PipeWire/PulseAudio and finds snapserver by itself (or `--server HOST`). Keys: ← → style,
+↑ ↓ volume, M next monitor, F11 full screen, Esc leave full screen. Don't run it next to snapclient
+on the same machine, or that room plays twice.
+
 ## Installing
 
 Download `snaptv-<version>.apk` from [Releases](https://github.com/thinke/snaptv/releases) and

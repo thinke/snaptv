@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "snaptv"
-include(":core", ":cli", ":app")
+include(":core", ":cli", ":app", ":desktop")
