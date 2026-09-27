@@ -128,6 +128,12 @@ object MessageReader {
 
 object MessageWriter {
     fun write(out: OutputStream, type: Int, id: Int, sentUs: Long, payload: ByteArray) {
+        out.write(encode(type, id, sentUs, payload))
+        out.flush()
+    }
+
+    /** One whole message, base header included. */
+    fun encode(type: Int, id: Int, sentUs: Long, payload: ByteArray): ByteArray {
         val buf = ByteBuffer.allocate(BaseHeader.SIZE + payload.size).order(ByteOrder.LITTLE_ENDIAN)
         buf.putShort(type.toShort())
         buf.putShort(id.toShort())
@@ -136,8 +142,7 @@ object MessageWriter {
         buf.putTv(0) // received
         buf.putInt(payload.size)
         buf.put(payload)
-        out.write(buf.array())
-        out.flush()
+        return buf.array()
     }
 
     fun jsonPayload(json: String): ByteArray {

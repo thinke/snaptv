@@ -15,6 +15,10 @@ import io.github.thinke.snaptv.core.protocol.WireChunk
 import io.github.thinke.snaptv.core.sync.SyncBuffer
 import io.github.thinke.snaptv.core.sync.SyncStats
 import io.github.thinke.snaptv.core.sync.TimeSync
+import io.github.thinke.snaptv.core.transport.Scheme
+import io.github.thinke.snaptv.core.transport.ServerAddress
+import io.github.thinke.snaptv.core.transport.TlsOptions
+import io.github.thinke.snaptv.core.transport.Transport
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -23,10 +27,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import java.io.BufferedInputStream
 import java.io.DataInputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.Base64
 
@@ -129,19 +130,28 @@ class SnapEngine(
 
     @Volatile private var running = false
     private var worker: Thread? = null
-    private var socket: Socket? = null
-    private var out: OutputStream? = null
+    @Volatile private var socket: Socket? = null
+    @Volatile private var transport: Transport? = null
     private val writeLock = Any()
     private var nextMessageId = 0
 
-    fun start(host: String, port: Int = 1704, credentials: Credentials? = null) {
+    fun start(host: String, port: Int = 1704, credentials: Credentials? = null) =
+        start(ServerAddress(Scheme.TCP, host, port), credentials = credentials)
+
+    /**
+     * Connects over plain TCP, WebSocket or WebSocket over TLS, per [address]. Like snapclient,
+     * a user:password in the URL is used as the login when no [credentials] are given.
+     */
+    fun start(address: ServerAddress, tls: TlsOptions = TlsOptions.Default, credentials: Credentials? = null) {
         stop()
         running = true
-        worker = Thread({ connectLoop(host, port, credentials) }, "snap-connection").apply { isDaemon = true; start() }
+        val login = credentials ?: Credentials.of(address.user.orEmpty(), address.password.orEmpty())
+        worker = Thread({ connectLoop(address, tls, login) }, "snap-connection").apply { isDaemon = true; start() }
     }
 
     fun stop() {
         running = false
+        runCatching { transport?.close() }
         runCatching { socket?.close() }
         // Wake it from a reconnect backoff, which can be longer than the join below.
         worker?.let { if (it !== Thread.currentThread()) it.interrupt() }
@@ -180,21 +190,20 @@ class SnapEngine(
         send(MessageType.CLIENT_INFO, MessageWriter.jsonPayload(json))
     }
 
-    private fun connectLoop(host: String, port: Int, credentials: Credentials?) {
+    private fun connectLoop(address: ServerAddress, tls: TlsOptions, credentials: Credentials?) {
+        val host = address.host
+        val port = address.port
         var backoffMs = 500L
         var authBackoffMs = authBackoffMinMs
         while (running) {
             var delayMs = backoffMs
             listener.onState(ConnectionState.Connecting(host, port))
             try {
-                val s = Socket()
-                socket = s
-                s.tcpNoDelay = true
-                s.connect(InetSocketAddress(host, port), 5000)
-                s.soTimeout = 15_000 // server sends time replies every second; silence means dead
-                out = s.getOutputStream()
+                val t = Transport.connect(address, tls) { socket = it }
+                transport = t
+                if (!running) break // stopped while connecting
                 backoffMs = 500L
-                session(s, credentials) {
+                session(t, credentials) {
                     // Like snapclient, the Hello reply (ServerSettings) is what means we're in.
                     authBackoffMs = authBackoffMinMs
                     listener.onState(ConnectionState.Connected(host, port))
@@ -211,8 +220,9 @@ class SnapEngine(
                 if (!running) break
                 listener.onState(ConnectionState.Failed(host, port, e.message ?: e.javaClass.simpleName))
             } finally {
+                runCatching { transport?.close() }
                 runCatching { socket?.close() }
-                out = null
+                transport = null
                 buffer = null
             }
             if (!running) break
@@ -225,13 +235,13 @@ class SnapEngine(
         }
     }
 
-    private fun session(s: Socket, credentials: Credentials?, onAccepted: () -> Unit) {
+    private fun session(s: Transport, credentials: Credentials?, onAccepted: () -> Unit) {
         send(MessageType.HELLO, MessageWriter.jsonPayload(helloJson(identity, credentials)))
         val timeThread = Thread({ timeLoop(s) }, "snap-time").apply { isDaemon = true; start() }
         var decoder: Decoder? = null
         var placer: ChunkPlacer? = null
         try {
-            val input = DataInputStream(BufferedInputStream(s.getInputStream(), 64 * 1024))
+            val input = DataInputStream(s.input)
             var accepted = false
             fun accept() {
                 if (!accepted) { accepted = true; onAccepted() }
@@ -291,7 +301,7 @@ class SnapEngine(
         }
     }
 
-    private fun timeLoop(s: Socket) {
+    private fun timeLoop(s: Transport) {
         try {
             // A quick burst gives a usable median before the first audio has to play.
             var sent = 0
@@ -308,8 +318,8 @@ class SnapEngine(
 
     private fun send(type: Int, payload: ByteArray) {
         synchronized(writeLock) {
-            val o = out ?: return
-            MessageWriter.write(o, type, nextMessageId++ and 0xffff, clock.nowUs(), payload)
+            val t = transport ?: return
+            t.send(MessageWriter.encode(type, nextMessageId++ and 0xffff, clock.nowUs(), payload))
         }
     }
 
