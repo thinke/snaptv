@@ -11,12 +11,27 @@ android {
         applicationId = "io.github.thinke.snaptv"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI passes these from the release tag (v1.2.3 -> 1.2.3); local builds use the defaults.
+        versionCode = System.getenv("SNAPTV_VERSION_CODE")?.toInt() ?: 1
+        versionName = System.getenv("SNAPTV_VERSION_NAME") ?: "0.1.0"
+    }
+
+    // Release signing comes from the environment so no key material lives in the repo.
+    val keystore = System.getenv("SNAPTV_KEYSTORE")
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("SNAPTV_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("SNAPTV_KEY_ALIAS")
+                keyPassword = System.getenv("SNAPTV_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
