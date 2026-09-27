@@ -73,13 +73,18 @@ fun NowPlayingScreen(player: Player, prefs: Prefs, onOpenSettings: () -> Unit) {
             .focusRequester(focus)
             .focusable()
             .onKeyEvent { e ->
+                // OK opens Settings on release: opening on press would hand the release to
+                // Settings' first item (Server), which TV list items treat as a click.
+                if (e.key in OK_KEYS) {
+                    if (e.type == KeyEventType.KeyUp) onOpenSettings()
+                    return@onKeyEvent true
+                }
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (e.key) {
                     Key.DirectionLeft -> prefs.update { it.copy(visualStyle = it.visualStyle - 1) }
                     Key.DirectionRight -> prefs.update { it.copy(visualStyle = it.visualStyle + 1) }
                     Key.DirectionUp -> { player.changeVolume(+5); volumeToast++ }
                     Key.DirectionDown -> { player.changeVolume(-5); volumeToast++ }
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Menu -> onOpenSettings()
                     else -> return@onKeyEvent false
                 }
                 pokes++
@@ -188,3 +193,5 @@ private fun statsText(s: PlayerState, latencyMs: Int): String {
         }
     }
 }
+
+private val OK_KEYS = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Menu)
