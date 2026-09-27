@@ -270,8 +270,24 @@ class Player(context: Context, private val prefs: Prefs) {
         if (prefs.syncTestRestore == null && own.streamId != SYNC_TEST_STREAM) {
             prefs.syncTestRestore = "${own.id}=${own.streamId}"
         }
-        clickSource = ClickTrackSource(host, SYNC_TEST_PORT).also { it.start() }
-        scope.launch(Dispatchers.IO) { control.setStream(own.id, SYNC_TEST_STREAM) }
+        scope.launch(Dispatchers.IO) {
+            clickSource = ClickTrackSource(ipv4For(host, room.serverHostName), SYNC_TEST_PORT).also { it.start() }
+            control.setStream(own.id, SYNC_TEST_STREAM)
+        }
+    }
+
+    /**
+     * snapserver's tcp inputs listen on IPv4 only (its source URI can't carry an IPv6 bind
+     * address), but discovery may have found the server by IPv6. Look for an IPv4 address by the
+     * server's own hostname; without one, try the address we have.
+     */
+    private fun ipv4For(host: String, serverHostName: String): String {
+        runCatching { java.net.InetAddress.getByName(host) }.getOrNull()?.let { if (it is java.net.Inet4Address) return host }
+        for (name in listOf(serverHostName, "$serverHostName.local").filter { serverHostName.isNotBlank() }) {
+            val v4 = runCatching { java.net.InetAddress.getAllByName(name) }.getOrNull()?.firstOrNull { it is java.net.Inet4Address }
+            if (v4 != null) return v4.hostAddress ?: continue
+        }
+        return host
     }
 
     fun stopRoomSyncTest() {

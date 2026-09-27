@@ -10,6 +10,7 @@ class ControlClientTest {
     private val status = Json.parseToJsonElement(
         """
         {"server":{
+          "server":{"host":{"name":"steambox","ip":""}},
           "groups":[
             {"id":"g-kitchen","name":"","stream_id":"radio","muted":false,"clients":[
               {"id":"kitchen","config":{"name":"","latency":0,"volume":{"muted":false,"percent":80}},
@@ -37,6 +38,7 @@ class ControlClientTest {
         assertEquals(listOf("radio", "spotify"), room.streams.map { it.id })
         assertEquals(listOf("g-kitchen" to "radio", "g-living" to "spotify"), room.groups.map { it.id to it.streamId })
         assertEquals("kitchen-pi", room.groups[0].clients.single().name)
+        assertEquals("steambox", room.serverHostName)
         assertEquals(true, room.groups[0].clients.single().connected)
     }
 

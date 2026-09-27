@@ -33,8 +33,10 @@ data class RoomInfo(
     val stream: StreamInfo?,
     /** Every stream on the server, for choosing a source. */
     val streams: List<StreamInfo>,
-    /** Every group and what it plays, for the room sync test (which switches them all). */
+    /** Every group and what it plays. */
     val groups: List<GroupInfo> = emptyList(),
+    /** The server machine's hostname as it reports it (e.g. "steambox"). */
+    val serverHostName: String = "",
 )
 
 /**
@@ -184,6 +186,7 @@ class ControlClient(
                     stream = streams.firstOrNull { it.id == streamId },
                     streams = streams,
                     groups = groups,
+                    serverHostName = server["server"]?.jsonObject?.get("host")?.jsonObject?.str("name").orEmpty(),
                 )
             }
             return null
