@@ -11,12 +11,26 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+// The version comes from the release tag in CI (SNAPTV_VERSION_NAME), like the Android app's.
+val snaptvVersion: Provider<String> = providers.environmentVariable("SNAPTV_VERSION_NAME").orElse("0.0.0-dev")
+val generateBuildInfo by tasks.registering {
+    inputs.property("version", snaptvVersion)
+    outputs.dir(layout.buildDirectory.dir("generated/buildinfo"))
+    doLast {
+        val version = inputs.properties["version"] as String
+        val f = outputs.files.singleFile.resolve("io/github/thinke/snaptv/desktop/BuildInfo.kt")
+        f.parentFile.mkdirs()
+        f.writeText("package io.github.thinke.snaptv.desktop\n\nconst val VERSION = \"$version\"\n")
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
     // Same visualizer as the TV app.
     sourceSets.getByName("main").kotlin.srcDir("../shared/visuals")
+    sourceSets.getByName("main").kotlin.srcDir(generateBuildInfo)
 }
 
 dependencies {
@@ -37,7 +51,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.AppImage)
             packageName = "snaptv-desktop"
-            packageVersion = (System.getenv("SNAPTV_VERSION_NAME") ?: "0.1.0").substringBefore('-')
+            packageVersion = snaptvVersion.get().substringBefore('-').let { if (it == "0.0.0") "0.0.1" else it }
             description = "SnapTV Desktop: Snapcast room with a visualizer"
             // JNA and JmDNS need these at run time.
             modules("java.naming", "jdk.unsupported")

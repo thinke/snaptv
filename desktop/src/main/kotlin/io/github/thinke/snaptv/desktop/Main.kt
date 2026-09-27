@@ -59,8 +59,6 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import javax.jmdns.JmDNS
 
-const val VERSION = "0.1.0"
-
 /**
  * SnapTV Desktop: a Snapcast room with SnapTV's visualizer, full screen on the monitor you
  * choose. The playback and control logic is core's [SnapSession], shared with the TV app.
@@ -68,7 +66,8 @@ const val VERSION = "0.1.0"
  *   snaptv-desktop [--server host] [--monitor N] [--windowed] [--tray]
  *
  * Keys: ← → style · ↑ ↓ volume · S or Enter settings · M next monitor · F11 full screen · Esc back.
- * Closing the window keeps playing from the system tray; quit from the tray menu.
+ * Closing the window only hides it: SnapTV keeps playing from the system tray, and quits from the
+ * tray icon's menu (left or right click).
  */
 fun main(args: Array<String>) {
     fun opt(name: String) = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
@@ -94,6 +93,9 @@ fun main(args: Array<String>) {
     )
     session.setDecoderLabel("SnapTV (built-in)")
     session.start()
+    lateinit var exit: () -> Unit
+    val updater = DesktopUpdater(prefs, args) { exit() }
+    updater.startChecking()
 
     application {
         val state by session.state.collectAsState()
@@ -109,6 +111,9 @@ fun main(args: Array<String>) {
         val trayIcon = remember { BitmapPainter(useResource("snaptv-tray.png") { loadImageBitmap(it) }) }
         lateinit var notifierRef: StatusNotifier
         val quit = { notifierRef.stop(); session.stop(); exitApplication() }
+        exit = quit
+        val update by updater.state.collectAsState()
+        var updateDismissed by remember { mutableStateOf(false) }
 
         // KDE's own tray protocol where available (transparent symbolic icon, native menu);
         // Java's XEmbed tray otherwise.
@@ -176,9 +181,16 @@ fun main(args: Array<String>) {
         ) {
             MaterialTheme(colors = darkColors(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
                 if (settingsOpen) {
-                    SettingsPanel(session, screens.size, monitor, onClose = { settingsOpen = false })
+                    SettingsPanel(session, updater, screens.size, monitor, onClose = { settingsOpen = false })
                 } else {
-                    NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size) { settingsOpen = true }
+                    Box {
+                        NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size) { settingsOpen = true }
+                        val offered = (update as? UpdateState.Available)?.release
+                        val busy = update is UpdateState.Downloading || (update is UpdateState.Failed && (update as UpdateState.Failed).release != null)
+                        if (!updateDismissed && ((offered != null && !updater.isSkipped(offered)) || busy)) {
+                            UpdatePrompt(updater, update, onClose = { updateDismissed = true })
+                        }
+                    }
                 }
             }
         }

@@ -10,6 +10,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.long
 
+data class Asset(val name: String, val url: String, val size: Long)
+
 /** A published release with the files an update needs. */
 data class Release(
     val version: Version,
@@ -22,7 +24,16 @@ data class Release(
     /** URL of the `<apk>.sha256` file published next to the APK. */
     val sha256Url: String,
     val pageUrl: String,
-)
+    /** Every file of the release, so each app can pick its own (APK, AppImage). */
+    val assets: List<Asset> = emptyList(),
+) {
+    /** The file matching [suffix] and its published checksum, or null if the release lacks either. */
+    fun download(suffix: String): Pair<Asset, Asset>? {
+        val file = assets.firstOrNull { it.name.endsWith(suffix) } ?: return null
+        val sum = assets.firstOrNull { it.name == "${file.name}.sha256" } ?: return null
+        return file to sum
+    }
+}
 
 /**
  * Semantic-ish version: numeric core plus optional pre-release (`0.1.2-rc1`). A pre-release
@@ -90,6 +101,9 @@ object Releases {
             val tag = o.str("tag_name") ?: return@mapNotNull null
             val version = Version.parse(tag) ?: return@mapNotNull null
             val assets = o["assets"]?.jsonArray.orEmpty().map { it.jsonObject }
+            val all = assets.mapNotNull { a ->
+                Asset(a.str("name") ?: return@mapNotNull null, a.str("browser_download_url") ?: return@mapNotNull null, (a["size"] as? JsonPrimitive)?.long ?: 0)
+            }
             val apk = assets.firstOrNull { it.str("name")?.endsWith(".apk") == true } ?: return@mapNotNull null
             val apkName = apk.str("name")!!
             val sum = assets.firstOrNull { it.str("name") == "$apkName.sha256" } ?: return@mapNotNull null
@@ -103,13 +117,14 @@ object Releases {
                 apkSize = (apk["size"] as? JsonPrimitive)?.long ?: 0,
                 sha256Url = sum.str("browser_download_url") ?: return@mapNotNull null,
                 pageUrl = o.str("html_url").orEmpty(),
+                assets = all,
             )
         }.sortedByDescending { it.version }
     }
 
     /** The release to offer over [installed], or null if none is newer. */
-    fun newest(releases: List<Release>, installed: Version, includePrereleases: Boolean): Release? =
-        releases.filter { includePrereleases || !it.prerelease }.maxByOrNull { it.version }?.takeIf { it.version > installed }
+    fun newest(releases: List<Release>, installed: Version, includePrereleases: Boolean, hasFile: (Release) -> Boolean = { true }): Release? =
+        releases.filter { (includePrereleases || !it.prerelease) && hasFile(it) }.maxByOrNull { it.version }?.takeIf { it.version > installed }
 
     /** The hash from a `sha256sum` line ("<hex>  <file>"). */
     fun parseSha256(text: String): String? =

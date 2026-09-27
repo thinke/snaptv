@@ -41,7 +41,7 @@ import io.github.thinke.snaptv.ui.VisualStyle
  * all of them go through core's [SnapSession] and settings model.
  */
 @Composable
-fun SettingsPanel(session: SnapSession, monitors: Int, monitor: Int, onClose: () -> Unit) {
+fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, monitor: Int, onClose: () -> Unit) {
     val prefs = session.prefs
     val settings by prefs.settings.collectAsState()
     val state by session.state.collectAsState()
@@ -146,6 +146,19 @@ fun SettingsPanel(session: SnapSession, monitors: Int, monitor: Int, onClose: ()
             Toggle("Show sync statistics", settings.showStats) { v -> prefs.update { it.copy(showStats = v) } }
         }
 
+        Section("Updates") {
+            val update by updater.state.collectAsState()
+            Text("Installed: SnapTV Desktop $VERSION · ${updateStatus(update)}", color = Color.White.copy(alpha = 0.8f))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = { updater.checkNow() }, enabled = update !is UpdateState.NotAppImage && update !is UpdateState.Checking && update !is UpdateState.Downloading) { Text("Check now") }
+                val available = (update as? UpdateState.Available)?.release ?: (update as? UpdateState.Failed)?.release
+                if (available != null) Button(onClick = { updater.install(available) }) { Text("Install ${available.version}") }
+            }
+            Toggle("Check for updates automatically (when opened and daily)", settings.updateCheck) { v -> prefs.update { it.copy(updateCheck = v) } }
+            Toggle("Include pre-releases", settings.updatePrerelease) { v -> prefs.update { it.copy(updatePrerelease = v) } }
+            Text("New versions come from github.com/thinke/snaptv releases and are checked against their published SHA-256 before replacing this AppImage.", color = Color.White.copy(alpha = 0.5f))
+        }
+
         Section("About") {
             Text("SnapTV Desktop $VERSION · client id ${session.clientId}", color = Color.White.copy(alpha = 0.7f))
             Text(statsText(state), color = Color.White.copy(alpha = 0.5f))
@@ -167,3 +180,51 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
         Text(label, color = Color.White, modifier = Modifier.padding(start = 8.dp))
     }
 }
+
+fun updateStatus(s: UpdateState): String = when (s) {
+    UpdateState.Idle -> "not checked yet"
+    UpdateState.Checking -> "checking GitHub…"
+    is UpdateState.UpToDate -> "up to date"
+    is UpdateState.Available -> "${s.release.version} is available"
+    is UpdateState.Downloading -> "downloading ${s.release.version}: ${(s.fraction * 100).toInt()} %"
+    is UpdateState.Failed -> s.message
+    UpdateState.NotAppImage -> "updates work when run as the AppImage"
+}
+
+/** Shown over the visualizer when a new version is found. */
+@Composable
+fun UpdatePrompt(updater: DesktopUpdater, state: UpdateState, onClose: () -> Unit) {
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.width(620.dp).background(Color(0xFF151827), androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            when (state) {
+                is UpdateState.Available -> {
+                    val r = state.release
+                    Text("SnapTV Desktop ${r.version} is available", style = MaterialTheme.typography.h5, color = Color.White)
+                    Text("You have $VERSION", color = Color.White.copy(alpha = 0.6f))
+                    Text(r.notes.lines().filter { it.isNotBlank() }.take(8).joinToString("\n").ifBlank { r.name }, color = Color.White.copy(alpha = 0.8f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { updater.install(r) }) { Text("Update and restart") }
+                        OutlinedButton(onClick = onClose) { Text("Later") }
+                        OutlinedButton(onClick = { updater.skip(r); onClose() }) { Text("Skip this version") }
+                    }
+                }
+                is UpdateState.Downloading -> {
+                    Text("Downloading SnapTV Desktop ${state.release.version}…", style = MaterialTheme.typography.h6, color = Color.White)
+                    androidx.compose.material.LinearProgressIndicator(progress = state.fraction, modifier = Modifier.fillMaxWidth())
+                }
+                is UpdateState.Failed -> {
+                    Text(state.message, color = Color(0xFFFF8A80))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        state.release?.let { r -> Button(onClick = { updater.install(r) }) { Text("Try again") } }
+                        OutlinedButton(onClick = onClose) { Text("Close") }
+                    }
+                }
+                else -> OutlinedButton(onClick = onClose) { Text("Close") }
+            }
+        }
+    }
+}
+

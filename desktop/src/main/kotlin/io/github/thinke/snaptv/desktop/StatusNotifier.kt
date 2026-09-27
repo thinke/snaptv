@@ -93,8 +93,8 @@ interface DBusMenu : DBusInterface {
 
 /**
  * SnapTV's tray icon in KDE's own protocol, so it is drawn like the icons around it: a
- * monochrome symbolic SVG that Plasma recolours for the panel, a tooltip, left click to show or
- * hide the window, and a native menu. [start] returns false where no tray host is running, and
+ * monochrome symbolic SVG that Plasma recolours for the panel, a tooltip, and a native menu that
+ * opens on left and right click (Show/Hide window, Settings, Quit). [start] returns false where no tray host is running, and
  * the caller then falls back to Java's (XEmbed) tray.
  */
 class StatusNotifier(
@@ -203,7 +203,8 @@ class StatusNotifier(
         "OverlayIconName" to Variant(""),
         "AttentionIconName" to Variant(""),
         "ToolTip" to Variant(ToolTip("snaptv-symbolic", emptyList(), "SnapTV", status), "(sa(iiay)ss)"),
-        "ItemIsMenu" to Variant(false),
+        // Left click opens the menu too, so quitting is always one click away there.
+        "ItemIsMenu" to Variant(true),
         "Menu" to Variant(DBusPath(MENU_PATH)),
     )
 

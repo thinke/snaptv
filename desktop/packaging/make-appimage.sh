@@ -17,6 +17,10 @@ exec "$HERE/usr/bin/snaptv-desktop" "$@"
 RUN
 chmod +x "$DIR/AppRun"
 OUT=${1:-desktop/build/SnapTV-Desktop-x86_64.AppImage}
+# Update information: AppImageUpdate, Gear Lever etc. find new releases on GitHub and download
+# only the changed parts, using the .zsync file appimagetool writes next to the AppImage.
+UPDATE_INFO="gh-releases-zsync|thinke|snaptv|latest|SnapTV-Desktop-*-x86_64.AppImage.zsync"
 # --appimage-extract-and-run: works without FUSE (CI runners, containers).
-ARCH=x86_64 "${APPIMAGETOOL:-appimagetool}" --appimage-extract-and-run "$DIR" "$OUT" >/dev/null
+ARCH=x86_64 "${APPIMAGETOOL:-appimagetool}" --appimage-extract-and-run -u "$UPDATE_INFO" "$DIR" "$OUT" >/dev/null
+command -v zsyncmake >/dev/null || echo "warning: zsyncmake not installed, so no $OUT.zsync (needed for delta updates)" >&2
 echo "$OUT"

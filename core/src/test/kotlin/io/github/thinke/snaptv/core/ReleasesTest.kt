@@ -60,4 +60,22 @@ class ReleasesTest {
         assertEquals(h, Releases.parseSha256("$h  snaptv-0.1.1.apk\n"))
         assertNull(Releases.parseSha256("not a hash"))
     }
+
+    @Test
+    fun picksEachAppsOwnFile() {
+        val json = """[{"tag_name":"v0.2.0","prerelease":false,"draft":false,"assets":[
+            {"name":"snaptv-0.2.0.apk","size":1,"browser_download_url":"https://x/a.apk"},
+            {"name":"snaptv-0.2.0.apk.sha256","size":1,"browser_download_url":"https://x/a.sha"},
+            {"name":"SnapTV-Desktop-0.2.0-x86_64.AppImage","size":1,"browser_download_url":"https://x/d.AppImage"},
+            {"name":"SnapTV-Desktop-0.2.0-x86_64.AppImage.sha256","size":1,"browser_download_url":"https://x/d.sha"}]},
+          {"tag_name":"v0.3.0","prerelease":false,"draft":false,"assets":[
+            {"name":"snaptv-0.3.0.apk","size":1,"browser_download_url":"https://x/b.apk"},
+            {"name":"snaptv-0.3.0.apk.sha256","size":1,"browser_download_url":"https://x/b.sha"}]}]"""
+        val r = Releases.parse(json)
+        val appImage = Releases.newest(r, v("0.1.0"), includePrereleases = false) { it.download("x86_64.AppImage") != null }
+        assertEquals("v0.2.0", appImage?.tag) // 0.3.0 has no AppImage
+        assertEquals("https://x/d.sha", appImage?.download("x86_64.AppImage")?.second?.url)
+        assertEquals("v0.3.0", Releases.newest(r, v("0.1.0"), includePrereleases = false)?.tag)
+    }
 }
+
