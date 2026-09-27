@@ -48,7 +48,7 @@ interface Transport : Closeable {
                 return when (address.scheme) {
                     Scheme.TCP -> TcpTransport(raw)
                     Scheme.WS -> WebSocketTransport.open(raw, address)
-                    Scheme.WSS -> WebSocketTransport.open(tls.wrap(raw, address.host, address.port), address)
+                    Scheme.WSS -> WebSocketTransport.open(tls.wrap(raw, address.host, address.port), address, raw)
                 }
             } catch (e: Exception) {
                 runCatching { raw.close() }

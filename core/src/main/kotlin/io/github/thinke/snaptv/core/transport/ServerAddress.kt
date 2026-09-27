@@ -86,6 +86,30 @@ data class ServerAddress(
             return ServerAddress(scheme, host, port, user, password)
         }
 
+        /**
+         * Splits a manually entered server into the (host, port) pair the app stores: a URL is
+         * kept whole (its own or default port applies, the stored port is just the tcp default),
+         * `host[:port]` is split. Throws [IllegalArgumentException] if [text] doesn't parse.
+         */
+        fun toStored(text: String): Pair<String, Int> {
+            val a = parse(text)
+            val t = text.trim()
+            return if ("://" in t) t to Scheme.TCP.defaultPort else a.host to a.port
+        }
+
+        /**
+         * The inverse of [toStored]. Also accepts what older settings screens stored for a URL,
+         * split at its last ':' ("wss://h" + 8443): a URL without a port of its own then takes a
+         * non-default stored [port].
+         */
+        fun fromStored(host: String, port: Int): ServerAddress {
+            val a = parse(host, defaultTcpPort = port)
+            if ("://" !in host || port == Scheme.TCP.defaultPort) return a
+            // Fails (bad port) or ends up in a path if the URL already has a port of its own.
+            val joined = runCatching { parse("${host.trim()}:$port") }.getOrNull()
+            return if (joined?.port == port) joined else a
+        }
+
         private fun decode(s: String) = java.net.URLDecoder.decode(s.replace("+", "%2B"), "UTF-8")
     }
 }

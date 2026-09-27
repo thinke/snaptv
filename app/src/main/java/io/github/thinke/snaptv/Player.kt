@@ -86,7 +86,7 @@ class Player(context: Context, private val prefs: Prefs) {
                 engine.stop()
                 val target = if (host.isNotBlank()) {
                     try {
-                        ServerAddress.parse(host, defaultTcpPort = port)
+                        ServerAddress.fromStored(host, port)
                     } catch (e: IllegalArgumentException) {
                         _state.update { it.copy(connection = ConnectionState.Failed(host, port, e.message ?: "bad server address")) }
                         null

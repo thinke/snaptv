@@ -62,4 +62,42 @@ class ServerAddressTest {
     fun toStringRoundTrips() {
         for (s in listOf("tcp://h:1704", "ws://10.0.0.2:1780", "wss://snap.example:1788")) assertEquals(s, p(s).toString())
     }
+
+    /** What ui/SettingsScreen.submit() stores until it uses [ServerAddress.toStored]: split at the last ':'. */
+    private fun legacySubmit(address: String): Pair<String, Int> =
+        address.substringBeforeLast(':', address) to (address.substringAfterLast(':', "").toIntOrNull() ?: 1704)
+
+    @Test
+    fun manualEntryRoundTrip() {
+        val cases = mapOf(
+            "10.0.0.5" to "tcp://10.0.0.5:1704",
+            "10.0.0.5:4953" to "tcp://10.0.0.5:4953",
+            "[::1]:1705" to "tcp://[::1]:1705",
+            "ws://10.0.0.5" to "ws://10.0.0.5:1780",
+            "ws://10.0.0.5:8080" to "ws://10.0.0.5:8080",
+            "wss://h" to "wss://h:1788",
+            "wss://h:8443" to "wss://h:8443",
+            "ws://[fe80::1]" to "ws://[fe80::1]:1780",
+            "wss://[fe80::1]:8443/stream" to "wss://[fe80::1]:8443",
+            "tcp://h:1704" to "tcp://h:1704",
+        )
+        for ((typed, want) in cases) {
+            val (host, port) = ServerAddress.toStored(typed)
+            assertEquals(typed, want, ServerAddress.fromStored(host, port).toString())
+        }
+        assertThrows(IllegalArgumentException::class.java) { ServerAddress.toStored("http://h") }
+    }
+
+    @Test
+    fun legacySplitUrlsKeepTheirPort() {
+        for ((typed, want) in mapOf(
+            "wss://h:8443" to "wss://h:8443",
+            "ws://h:1780" to "ws://h:1780",
+            "ws://[fe80::1]:8080" to "ws://[fe80::1]:8080",
+            "h:4953" to "tcp://h:4953",
+        )) {
+            val (host, port) = legacySubmit(typed)
+            assertEquals(typed, want, ServerAddress.fromStored(host, port).toString())
+        }
+    }
 }

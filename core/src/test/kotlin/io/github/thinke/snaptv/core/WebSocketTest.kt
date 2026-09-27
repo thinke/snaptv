@@ -25,6 +25,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
@@ -35,6 +36,8 @@ import java.nio.ByteOrder
 import java.nio.file.Files
 import java.security.KeyStore
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.KeyManagerFactory
@@ -43,9 +46,16 @@ import javax.net.ssl.SSLException
 
 class WebSocketTest {
     private val servers = mutableListOf<ServerSocket>()
+    private val scripts = mutableListOf<Thread>()
+    private val scriptFailures = ConcurrentLinkedQueue<Throwable>()
 
+    /** Server scripts run on their own threads; their assertion failures fail the test here. */
     @After
-    fun tearDown() = servers.forEach { runCatching { it.close() } }
+    fun tearDown() {
+        synchronized(scripts) { scripts.toList() }.forEach { it.join(5000) }
+        servers.forEach { runCatching { it.close() } }
+        scriptFailures.peek()?.let { throw AssertionError("server script failed: $it", it) }
+    }
 
     // ---- framing ----
 
@@ -225,46 +235,51 @@ class WebSocketTest {
         }
     }
 
+    /** The same over plain tcp://, i.e. TcpTransport: messages back to back on the socket. */
+    @Test
+    fun engineSpeaksTcp() {
+        val hello = CompletableFuture<String>()
+        val port = serve { c ->
+            val input = DataInputStream(c.input)
+            while (true) {
+                val base = ByteArray(26)
+                input.readFully(base)
+                val b = ByteBuffer.wrap(base).order(ByteOrder.LITTLE_ENDIAN)
+                val p = ByteArray(b.getInt(22))
+                input.readFully(p)
+                if (b.getShort(0).toInt() == MessageType.HELLO) {
+                    hello.complete(String(p, 4, p.size - 4))
+                    val settings = MessageWriter.jsonPayload("""{"bufferMs":900,"latency":0,"muted":false,"volume":17}""")
+                    c.send(MessageWriter.encode(MessageType.SERVER_SETTINGS, 1, 0, settings))
+                }
+            }
+        }
+        val got = CompletableFuture<ServerSettings>()
+        val engine = SnapEngine(ClientIdentity("snaptv-test", "h", "os", "arch"), object : SnapListener {
+            override fun onSettings(settings: ServerSettings) { got.complete(settings) }
+        })
+        engine.start(ServerAddress.parse("tcp://127.0.0.1:$port"))
+        try {
+            assertTrue(hello.get(5, TimeUnit.SECONDS).contains("\"ID\":\"snaptv-test\""))
+            val s = got.get(5, TimeUnit.SECONDS)
+            assertEquals(900, s.bufferMs)
+            assertEquals(17, s.volume)
+        } finally {
+            engine.stop()
+        }
+    }
+
     // ---- wss ----
 
     @Test
     fun wssWithPinnedSelfSignedCertificate() {
-        val keytool = File(System.getProperty("java.home"), "bin/keytool")
-        assumeTrue("keytool not available", keytool.canExecute())
-        val dir = Files.createTempDirectory("snaptv-wss").toFile()
-        val ks = File(dir, "server.p12")
-        val pem = File(dir, "server.pem")
-        fun run(vararg a: String) {
-            val p = ProcessBuilder(keytool.path, *a).redirectErrorStream(true).start()
-            val out = p.inputStream.readBytes().decodeToString()
-            assertEquals(out, 0, p.waitFor())
-        }
-        run("-genkeypair", "-keystore", ks.path, "-storetype", "PKCS12", "-storepass", "secret", "-alias", "s",
-            "-keyalg", "EC", "-dname", "CN=snapserver.invalid", "-validity", "2")
-        run("-exportcert", "-rfc", "-keystore", ks.path, "-storetype", "PKCS12", "-storepass", "secret", "-alias", "s", "-file", pem.path)
-
-        val keyStore = KeyStore.getInstance("PKCS12").apply { ks.inputStream().use { load(it, "secret".toCharArray()) } }
-        val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(keyStore, "secret".toCharArray()) }
-        val ctx = SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, null, null) }
-        val ss = ctx.serverSocketFactory.createServerSocket(0, 5, InetAddress.getLoopbackAddress())
-        servers += ss
         val msg = chunk(7, ByteArray(1000) { it.toByte() })
-        Thread {
-            while (!ss.isClosed) {
-                val s = runCatching { ss.accept() }.getOrNull() ?: break
-                Thread {
-                    runCatching {
-                        s.use {
-                            val c = Conn(it, ss.localPort)
-                            c.acceptHandshake()
-                            c.send(WsFrames.encode(WsFrames.BINARY, msg, null))
-                            c.input.read()
-                        }
-                    }
-                }.start()
-            }
-        }.apply { isDaemon = true }.start()
-        val address = ServerAddress.parse("wss://127.0.0.1:${ss.localPort}")
+        val (port, pem) = serveTls { c ->
+            c.acceptHandshake()
+            c.send(WsFrames.encode(WsFrames.BINARY, msg, null))
+            c.input.read()
+        }
+        val address = ServerAddress.parse("wss://127.0.0.1:$port")
 
         // Not in the system trust store (and the name doesn't match): refused by default.
         assertThrows(SSLException::class.java) { Transport.connect(address) }
@@ -275,7 +290,35 @@ class WebSocketTest {
             assertArrayEquals(ByteArray(1000) { it.toByte() }, w.payload)
             t.close()
         }
-        dir.deleteRecursively()
+    }
+
+    /**
+     * close() must not hang behind a send() stuck on a peer that stopped reading. SSLSocket.close()
+     * waits for such a writer without a timeout, so over wss only closing the TCP socket helps.
+     */
+    @Test
+    fun wssCloseWithStuckWriter() {
+        val release = CountDownLatch(1)
+        val (port, _) = serveTls { c ->
+            c.acceptHandshake()
+            release.await(10, TimeUnit.SECONDS) // never read what the client sends
+        }
+        val t = Transport.connect(ServerAddress.parse("wss://127.0.0.1:$port"), TlsOptions(trustAll = true))
+        val writer = Thread {
+            val big = ByteArray(256 * 1024)
+            runCatching { while (true) t.send(big) }
+        }.apply { isDaemon = true; start() }
+        // Wait until the writer is blocked: nothing more has gone out for a while.
+        Thread.sleep(1000)
+        assertTrue(writer.isAlive)
+        val closed = CompletableFuture.runAsync { t.close() }
+        try {
+            closed.get(3, TimeUnit.SECONDS)
+            writer.join(3000)
+            assertTrue("writer still blocked after close", !writer.isAlive)
+        } finally {
+            release.countDown()
+        }
     }
 
     // ---- helpers ----
@@ -312,10 +355,58 @@ class WebSocketTest {
     private fun serve(script: (Conn) -> Unit): Int {
         val ss = ServerSocket(0, 5, InetAddress.getLoopbackAddress())
         servers += ss
-        Thread {
-            runCatching { ss.accept().use { script(Conn(it, ss.localPort)) } }
-        }.apply { isDaemon = true }.start()
+        runScript { ss.accept().use { script(Conn(it, ss.localPort)) } }
         return ss.localPort
+    }
+
+    /**
+     * Runs [script] for every connection to a TLS loopback server with a fresh self-signed
+     * certificate; returns the port and that certificate as PEM.
+     */
+    private fun serveTls(script: (Conn) -> Unit): Pair<Int, File> {
+        val keytool = File(System.getProperty("java.home"), "bin/keytool")
+        assumeTrue("keytool not available", keytool.canExecute())
+        val dir = Files.createTempDirectory("snaptv-wss").toFile().apply { deleteOnExit() }
+        val ks = File(dir, "server.p12").apply { deleteOnExit() }
+        val pem = File(dir, "server.pem").apply { deleteOnExit() }
+        fun run(vararg a: String) {
+            val p = ProcessBuilder(keytool.path, *a).redirectErrorStream(true).start()
+            val out = p.inputStream.readBytes().decodeToString()
+            assertEquals(out, 0, p.waitFor())
+        }
+        run("-genkeypair", "-keystore", ks.path, "-storetype", "PKCS12", "-storepass", "secret", "-alias", "s",
+            "-keyalg", "EC", "-dname", "CN=snapserver.invalid", "-validity", "2")
+        run("-exportcert", "-rfc", "-keystore", ks.path, "-storetype", "PKCS12", "-storepass", "secret", "-alias", "s", "-file", pem.path)
+
+        val keyStore = KeyStore.getInstance("PKCS12").apply { ks.inputStream().use { load(it, "secret".toCharArray()) } }
+        val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(keyStore, "secret".toCharArray()) }
+        val ctx = SSLContext.getInstance("TLS").apply { init(kmf.keyManagers, null, null) }
+        val ss = ctx.serverSocketFactory.createServerSocket(0, 5, InetAddress.getLoopbackAddress())
+        servers += ss
+        Thread {
+            while (!ss.isClosed) {
+                val s = runCatching { ss.accept() }.getOrNull() ?: break
+                runScript { s.use { script(Conn(it, ss.localPort)) } }
+            }
+        }.apply { isDaemon = true }.start()
+        return ss.localPort to pem
+    }
+
+    /**
+     * Runs [body] on a daemon thread, keeping any failure for [tearDown]. I/O errors are the
+     * client going away (refused handshakes, closes) and don't count.
+     */
+    private fun runScript(body: () -> Unit) {
+        val t = Thread {
+            try {
+                body()
+            } catch (_: IOException) {
+            } catch (e: Throwable) {
+                scriptFailures += e
+            }
+        }.apply { isDaemon = true }
+        synchronized(scripts) { scripts += t }
+        t.start()
     }
 
     private fun chunk(id: Int, pcm: ByteArray): ByteArray {

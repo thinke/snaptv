@@ -112,7 +112,11 @@ object WsFrames {
  * server (no subprotocol, no extensions), every snapcast message is one binary message in each
  * direction. Server messages may be fragmented (beast auto-fragments); pings are answered.
  */
-class WebSocketTransport private constructor(private val socket: Socket) : Transport {
+class WebSocketTransport private constructor(
+    private val socket: Socket,
+    /** The TCP socket under [socket] for wss (the same socket for ws). */
+    private val rawSocket: Socket,
+) : Transport {
     private val raw = BufferedInputStream(socket.getInputStream(), 64 * 1024)
     private val out: OutputStream = socket.getOutputStream()
     private val writeLock = ReentrantLock()
@@ -125,7 +129,11 @@ class WebSocketTransport private constructor(private val socket: Socket) : Trans
 
     override val isClosed get() = socket.isClosed
 
-    /** Says goodbye if the socket is writable within a moment, then drops it. */
+    /**
+     * Says goodbye if the socket is writable within a moment, then drops it. The TCP socket goes
+     * first: SSLSocket.close() waits, with no timeout, for a writer stuck on a peer that stopped
+     * reading, and closing the socket under it is what unblocks that writer.
+     */
     override fun close() {
         try {
             if (!socket.isClosed && writeLock.tryLock(200, TimeUnit.MILLISECONDS)) {
@@ -141,6 +149,7 @@ class WebSocketTransport private constructor(private val socket: Socket) : Trans
             }
         } catch (_: Exception) {
         } finally {
+            runCatching { rawSocket.close() }
             socket.close()
         }
     }
@@ -273,9 +282,12 @@ class WebSocketTransport private constructor(private val socket: Socket) : Trans
     }
 
     companion object {
-        /** Runs the upgrade on an already connected (and, for wss, TLS) socket. */
-        fun open(socket: Socket, address: ServerAddress): WebSocketTransport {
-            val t = WebSocketTransport(socket)
+        /**
+         * Runs the upgrade on an already connected (and, for wss, TLS) [socket]; [rawSocket] is
+         * the TCP socket a TLS [socket] is layered on.
+         */
+        fun open(socket: Socket, address: ServerAddress, rawSocket: Socket = socket): WebSocketTransport {
+            val t = WebSocketTransport(socket, rawSocket)
             t.handshake(address)
             return t
         }
