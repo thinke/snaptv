@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">SnapTV</string>
     <string name="channel_playback">Playback</string>
+    <string name="dream_name">SnapTV visualizer</string>
 </resources>
