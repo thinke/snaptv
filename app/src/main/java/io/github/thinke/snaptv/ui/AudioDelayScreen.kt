@@ -109,13 +109,16 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item { Stepper("Fine", "◀ ▶ changes by 10 ms", 10, ::adjust, Modifier.focusRequester(first)) }
             item { Stepper("Coarse", "◀ ▶ changes by 50 ms", 50, ::adjust) }
-            item {
-                ListItem(
-                    selected = false,
-                    onClick = { roomTest = true },
-                    headlineContent = { Text("Sync test through snapcast") },
-                    supportingContent = { Text("A click through the whole snapcast path and a flash when it should be heard; adjust until they coincide") },
-                )
+            // The sync test through snapcast (RoomSyncTestScreen) is hidden until it is reliable.
+            if (SHOW_SNAPCAST_SYNC_TEST) {
+                item {
+                    ListItem(
+                        selected = false,
+                        onClick = { roomTest = true },
+                        headlineContent = { Text("Sync test through snapcast") },
+                        supportingContent = { Text("A click through the whole snapcast path and a flash when it should be heard; adjust until they coincide") },
+                    )
+                }
             }
             item {
                 ListItem(
@@ -170,3 +173,4 @@ private fun Stepper(title: String, hint: String, step: Int, adjust: (Int) -> Uni
     )
 }
 
+private const val SHOW_SNAPCAST_SYNC_TEST = false

@@ -22,10 +22,6 @@ what is playing instead of a blank menu.
   - **Sync test with picture:** a beep and a flash once a second; adjust until they coincide.
   - **Measure with the TV's microphone:** plays test chirps and times them automatically
     (needs a TV with a built-in microphone, switched on).
-  - **Sync test through snapcast:** a click travels the whole snapcast path and the screen
-    flashes when snapcast says it should be heard; adjust until they coincide. Works with the
-    TV alone (rooms grouped with it click too). Needs a `SyncTest` input in snapserver.conf:
-    `source = tcp://0.0.0.0:4954?name=SyncTest&mode=server&sampleformat=48000:16:2`.
   - **By ear** against another room, in 10 ms and 50 ms steps.
 
   The delay is stored on the server as the TV's snapcast latency, so Snapweb shows and changes
