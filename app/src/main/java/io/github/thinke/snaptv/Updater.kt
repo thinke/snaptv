@@ -68,7 +68,8 @@ class Updater(private val context: Context, private val prefs: Prefs, private va
     fun checkOnStart() = checkIfOlderThan(START_MIN_INTERVAL_MS)
 
     private fun checkIfOlderThan(ms: Long) {
-        if (!prefs.settings.value.updateCheck) return
+        // Debug builds are signed with the debug key, so a release could never replace them.
+        if (BuildConfig.DEBUG || !prefs.settings.value.updateCheck) return
         if (System.currentTimeMillis() - prefs.lastUpdateCheck < ms) return
         scope.launch { check() }
     }

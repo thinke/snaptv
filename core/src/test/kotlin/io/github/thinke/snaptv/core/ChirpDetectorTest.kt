@@ -69,3 +69,14 @@ class ChirpDetectorTest {
         assertNull(ChirpDetector.findArrivals(rec, chirp, listOf(0), searchFrames = 50)[0])
     }
 }
+
+class ClickTrackTest {
+    @Test
+    fun oneClickPerSecondThenSilence() {
+        val rate = io.github.thinke.snaptv.core.source.ClickTrackSource.RATE
+        fun s(f: Long) = io.github.thinke.snaptv.core.source.ClickTrackSource.sample(f)
+        assertTrue((0 until rate / 100).any { kotlin.math.abs(s(it.toLong())) > 0.3f })
+        assertEquals(0f, s(rate / 2L), 0f)
+        assertTrue((0 until rate / 100).any { kotlin.math.abs(s(rate + it.toLong())) > 0.3f })
+    }
+}

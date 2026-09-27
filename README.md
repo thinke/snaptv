@@ -4,6 +4,14 @@ An Android TV client for [Snapcast](https://github.com/badaix/snapcast) multiroo
 Your TV becomes one more synchronised room speaker, and the screen shows a visualizer of
 what is playing instead of a blank menu.
 
+![Now playing, spectrum visualizer](docs/screenshots/now-playing.png)
+
+| Halo | Oscilloscope |
+|---|---|
+| ![Halo visualizer](docs/screenshots/halo.png) | ![Oscilloscope visualizer](docs/screenshots/oscilloscope.png) |
+| **Audio delay** | **Sync test with picture** |
+| ![Audio delay settings](docs/screenshots/audio-delay.png) | ![Sync test](docs/screenshots/sync-test.png) |
+
 - **Built for the remote.** Everything works with the D-pad: ◀ ▶ changes the visualizer,
   ▲ ▼ changes volume, OK opens settings.
 - **Plays in the background.** Audio runs in a foreground service, keeps going while the TV
@@ -14,7 +22,13 @@ what is playing instead of a blank menu.
   - **Sync test with picture:** a beep and a flash once a second; adjust until they coincide.
   - **Measure with the TV's microphone:** plays test chirps and times them automatically
     (needs a TV with a built-in microphone, switched on).
+  - **Room sync test:** a click track through snapcast in the TV's own group; group another
+    room with the TV in Snapweb and adjust until their clicks merge. Needs a `SyncTest` input
+    in snapserver.conf: `source = tcp://0.0.0.0:4954?name=SyncTest&mode=server&sampleformat=48000:16:2`.
   - **By ear** against another room, in 10 ms and 50 ms steps.
+
+  The delay is stored on the server as the TV's snapcast latency, so Snapweb shows and changes
+  the same value.
 - **Visuals that match the sound.** Spectrum, halo and oscilloscope styles are drawn from the
   exact samples being played, timed to when they are *heard*, not when they are decoded.
 - **Finds your server.** Discovers snapserver over mDNS (`_snapcast._tcp`), or you can enter

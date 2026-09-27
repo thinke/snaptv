@@ -35,6 +35,9 @@ class ControlClientTest {
         assertEquals("Song", room.stream?.track?.title)
         assertEquals("A, B", room.stream?.track?.artist)
         assertEquals(listOf("radio", "spotify"), room.streams.map { it.id })
+        assertEquals(listOf("g-kitchen" to "radio", "g-living" to "spotify"), room.groups.map { it.id to it.streamId })
+        assertEquals("kitchen-pi", room.groups[0].clients.single().name)
+        assertEquals(true, room.groups[0].clients.single().connected)
     }
 
     @Test

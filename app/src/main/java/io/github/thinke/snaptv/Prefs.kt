@@ -52,6 +52,14 @@ class Prefs(context: Context) {
         get() = sp.getLong("lastUpdateCheck", 0)
         set(v) = sp.edit().putLong("lastUpdateCheck", v).apply()
 
+    /**
+     * Streams to give back to groups after the room sync test ("group=stream;…"). Kept here
+     * so a crash mid-test can't leave rooms on the click track.
+     */
+    var syncTestRestore: String?
+        get() = sp.getString("syncTestRestore", null)
+        set(v) = sp.edit().putString("syncTestRestore", v).apply()
+
     /** A version the user chose to skip; not offered again (a newer one still is). */
     var skippedVersion: String?
         get() = sp.getString("skippedVersion", null)

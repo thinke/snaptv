@@ -21,6 +21,10 @@ data class TrackInfo(val title: String?, val artist: String?, val album: String?
 
 data class StreamInfo(val id: String, val status: String, val track: TrackInfo?)
 
+data class ClientSummary(val id: String, val name: String, val connected: Boolean)
+
+data class GroupInfo(val id: String, val streamId: String, val clients: List<ClientSummary> = emptyList())
+
 /** Where this client sits in the server's world: its name, its group and what that group plays. */
 data class RoomInfo(
     val clientName: String,
@@ -29,6 +33,8 @@ data class RoomInfo(
     val stream: StreamInfo?,
     /** Every stream on the server, for choosing a source. */
     val streams: List<StreamInfo>,
+    /** Every group and what it plays, for the room sync test (which switches them all). */
+    val groups: List<GroupInfo> = emptyList(),
 )
 
 /**
@@ -155,6 +161,14 @@ class ControlClient(
         fun parseStatus(result: JsonElement, clientId: String): RoomInfo? {
             val server = result.jsonObject["server"]?.jsonObject ?: return null
             val streams = server["streams"]?.jsonArray.orEmpty().mapNotNull { parseStream(it) }
+            val groups = server["groups"]?.jsonArray.orEmpty().mapNotNull { g ->
+                val o = g.jsonObject
+                val clients = o["clients"]?.jsonArray.orEmpty().map { it.jsonObject }.mapNotNull { c ->
+                    val name = c["config"]?.jsonObject?.str("name").orEmpty().ifBlank { c["host"]?.jsonObject?.str("name").orEmpty() }
+                    ClientSummary(c.str("id") ?: return@mapNotNull null, name, (c["connected"] as? JsonPrimitive)?.contentOrNull == "true")
+                }
+                GroupInfo(o.str("id") ?: return@mapNotNull null, o.str("stream_id").orEmpty(), clients)
+            }
             for (g in server["groups"]?.jsonArray.orEmpty()) {
                 val group = g.jsonObject
                 val client = group["clients"]?.jsonArray.orEmpty()
@@ -169,6 +183,7 @@ class ControlClient(
                     groupName = group.str("name").orEmpty(),
                     stream = streams.firstOrNull { it.id == streamId },
                     streams = streams,
+                    groups = groups,
                 )
             }
             return null

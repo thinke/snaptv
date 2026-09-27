@@ -55,6 +55,11 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     var measuring by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
     var syncTest by remember { mutableStateOf(false) }
+    var roomTest by remember { mutableStateOf(false) }
+    if (roomTest) {
+        RoomSyncTestScreen(player, onBack = { roomTest = false })
+        return
+    }
     if (syncTest) {
         SyncTestScreen(player, prefs, onBack = { syncTest = false })
         return
@@ -104,6 +109,14 @@ fun AudioDelayScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item { Stepper("Fine", "◀ ▶ changes by 10 ms", 10, ::adjust, Modifier.focusRequester(first)) }
             item { Stepper("Coarse", "◀ ▶ changes by 50 ms", 50, ::adjust) }
+            item {
+                ListItem(
+                    selected = false,
+                    onClick = { roomTest = true },
+                    headlineContent = { Text("Room sync test") },
+                    supportingContent = { Text("Clicks through snapcast in this TV's group; adjust until the rooms' clicks merge") },
+                )
+            }
             item {
                 ListItem(
                     selected = false,

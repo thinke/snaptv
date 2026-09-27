@@ -170,7 +170,8 @@ private fun statusLine(s: PlayerState): String {
             }
             val fmt = s.format?.let { " · ${it.rate / 1000.0} kHz ${s.codec?.uppercase()}" } ?: ""
             when {
-                s.audible -> "Playing from ${c.host}$fmt"
+                // The address only matters when something is wrong; Settings shows it.
+                s.audible -> "Playing$fmt"
                 s.sync?.playing == true -> "Connected to ${c.host} · waiting for sound"
                 else -> "Connected to ${c.host} · buffering"
             }

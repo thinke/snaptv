@@ -13,6 +13,7 @@ import io.github.thinke.snaptv.core.SnapListener
 import io.github.thinke.snaptv.core.codec.SampleFormat
 import io.github.thinke.snaptv.core.control.ControlClient
 import io.github.thinke.snaptv.core.control.RoomInfo
+import io.github.thinke.snaptv.core.source.ClickTrackSource
 import io.github.thinke.snaptv.core.sync.SyncStats
 import io.github.thinke.snaptv.core.transport.Scheme
 import io.github.thinke.snaptv.core.transport.ServerAddress
@@ -125,6 +126,12 @@ class Player(context: Context, private val prefs: Prefs) {
         scope.launch {
             prefs.settings.map { it.latencyMs }.distinctUntilChanged().collect { engine.outputLatencyMs = it }
         }
+        // A room sync test that didn't end cleanly (crash, reboot) still owes rooms their music.
+        scope.launch {
+            state.map { it.room != null }.distinctUntilChanged().collect { online ->
+                if (online && clickSource == null) restoreAfterSyncTest()
+            }
+        }
         // Audio delay lives on the server (the client's latency, as in Snapweb). A value kept
         // locally, from before, or set while the control API was unreachable, moves there once
         // we can reach it, so it is never applied twice.
@@ -159,6 +166,7 @@ class Player(context: Context, private val prefs: Prefs) {
                     discover()
                 }
                 if (target != null) {
+                    serverHost = target.host
                     engine.start(target, if (trustAll) TlsOptions(trustAll = true) else TlsOptions.Default, credentials)
                     // The control API is plain JSON-RPC on 1705 whatever transport the audio uses.
                     control.start(target.host)
@@ -240,6 +248,50 @@ class Player(context: Context, private val prefs: Prefs) {
 
     fun adjustAudioDelay(stepMs: Int) = setAudioDelay((pendingDelayMs ?: audioDelayMs.value) + stepMs)
 
+    /** This TV's snapcast client id. */
+    val clientId: String get() = prefs.clientId
+
+    @Volatile private var serverHost: String? = null
+    private var clickSource: ClickTrackSource? = null
+
+    /** Whether snapserver has the click-track input the room sync test feeds. */
+    fun roomSyncTestAvailable(): Boolean = state.value.room?.streams?.any { it.id == SYNC_TEST_STREAM } == true
+
+    /**
+     * Plays a click track through snapcast in this TV's group: every room in the group clicks
+     * together by snapcast's timing, so the TV's delay can be tuned against them. A SnapTV only
+     * ever switches its own group; rooms join the test by being grouped with the TV.
+     */
+    fun startRoomSyncTest() {
+        val room = state.value.room ?: return
+        val host = serverHost ?: return
+        val own = room.groups.firstOrNull { it.id == room.groupId } ?: return
+        // Don't overwrite a pending restore with the click track itself.
+        if (prefs.syncTestRestore == null && own.streamId != SYNC_TEST_STREAM) {
+            prefs.syncTestRestore = "${own.id}=${own.streamId}"
+        }
+        clickSource = ClickTrackSource(host, SYNC_TEST_PORT).also { it.start() }
+        scope.launch(Dispatchers.IO) { control.setStream(own.id, SYNC_TEST_STREAM) }
+    }
+
+    fun stopRoomSyncTest() {
+        clickSource?.stop()
+        clickSource = null
+        restoreAfterSyncTest()
+    }
+
+    /** Error from the click source, e.g. snapserver has no SyncTest input. */
+    fun roomSyncTestError(): String? = clickSource?.error
+
+    private fun restoreAfterSyncTest() {
+        val saved = prefs.syncTestRestore ?: return
+        val pairs = saved.split(';').mapNotNull { e -> e.split('=', limit = 2).takeIf { it.size == 2 } }
+        scope.launch(Dispatchers.IO) {
+            pairs.forEach { (group, stream) -> control.setStream(group, stream) }
+            prefs.syncTestRestore = null
+        }
+    }
+
     /** The name shown for this TV in Snapweb and other controllers. */
     fun setName(name: String) {
         scope.launch(Dispatchers.IO) { control.setName(name) }
@@ -288,6 +340,9 @@ class Player(context: Context, private val prefs: Prefs) {
     companion object {
         const val SYNC_TEST_PERIOD_US = 1_000_000L
         const val MAX_DELAY_MS = 2000
+        /** The snapserver input the room sync test feeds: `tcp://0.0.0.0:4954?name=SyncTest&mode=server`. */
+        const val SYNC_TEST_STREAM = "SyncTest"
+        const val SYNC_TEST_PORT = 4954
         private const val AUDIBLE_RMS = 0.001f // about -60 dBFS
         private const val AUDIBLE_HOLD_US = 8_000_000L
 
