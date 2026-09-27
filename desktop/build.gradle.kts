@@ -25,6 +25,10 @@ dependencies {
     implementation(compose.material)
     implementation(libs.jna)
     implementation(libs.jmdns)
+    // KDE's own tray protocol (StatusNotifierItem over D-Bus), for a transparent icon and native menu.
+    implementation(libs.dbus.java.core)
+    implementation(libs.dbus.java.unixsocket)
+    runtimeOnly(libs.slf4j.nop) // dbus-java logs through SLF4J; we don't need its logs
 }
 
 compose.desktop {

@@ -41,7 +41,8 @@ table below with every such change.
 | Update check from GitHub releases | ✅ | ❌ | desktop ships as AppImage |
 | Remote / touch / mouse / keyboard input | ✅ D-pad, touch, mouse | ✅ keyboard, mouse | |
 | Multi-monitor full screen | n/a | ✅ | desktop only |
-| Start at boot / background playback | ✅ | ❌ | desktop runs while its window is open |
+| Background playback | ✅ foreground service | ✅ system tray (KDE StatusNotifierItem, symbolic icon; XEmbed fallback) | close hides to tray, quit from its menu |
+| Start at boot / login | ✅ (not on Android 15+) | ❌ | `--tray` is ready for an autostart entry |
 | Hidden: sync test through snapcast | ⏸ | ⏸ | parked; `SHOW_SNAPCAST_SYNC_TEST` |
 
 ## Building

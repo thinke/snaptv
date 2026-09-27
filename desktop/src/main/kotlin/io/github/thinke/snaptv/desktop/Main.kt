@@ -36,6 +36,10 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.Tray
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.res.loadImageBitmap
+import androidx.compose.ui.res.useResource
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
@@ -61,9 +65,10 @@ const val VERSION = "0.1.0"
  * SnapTV Desktop: a Snapcast room with SnapTV's visualizer, full screen on the monitor you
  * choose. The playback and control logic is core's [SnapSession], shared with the TV app.
  *
- *   snaptv-desktop [--server host] [--monitor N] [--windowed]
+ *   snaptv-desktop [--server host] [--monitor N] [--windowed] [--tray]
  *
- * Keys: ← → style · ↑ ↓ volume · S or Enter settings · M next monitor · F11 full screen · Esc back
+ * Keys: ← → style · ↑ ↓ volume · S or Enter settings · M next monitor · F11 full screen · Esc back.
+ * Closing the window keeps playing from the system tray; quit from the tray menu.
  */
 fun main(args: Array<String>) {
     fun opt(name: String) = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
@@ -97,6 +102,40 @@ fun main(args: Array<String>) {
         val monitor = (if (settings.monitor < 0) (if (screens.size > 1) 1 else 0) else settings.monitor).coerceIn(0, screens.size - 1)
         var settingsOpen by remember { mutableStateOf(false) }
         var pokes by remember { mutableIntStateOf(0) }
+        // Shown unless started with --tray; closing hides to the tray and keeps playing.
+        var visible by remember { mutableStateOf("--tray" !in args) }
+        val icon = remember { BitmapPainter(useResource("snaptv-icon.png") { loadImageBitmap(it) }) }
+        // Java's Linux tray (XEmbed) has no transparency, so the tray icon is opaque edge to edge.
+        val trayIcon = remember { BitmapPainter(useResource("snaptv-tray.png") { loadImageBitmap(it) }) }
+        lateinit var notifierRef: StatusNotifier
+        val quit = { notifierRef.stop(); session.stop(); exitApplication() }
+
+        // KDE's own tray protocol where available (transparent symbolic icon, native menu);
+        // Java's XEmbed tray otherwise.
+        val notifier = remember {
+            StatusNotifier(
+                onToggle = { java.awt.EventQueue.invokeLater { visible = !visible } },
+                onSettings = { java.awt.EventQueue.invokeLater { visible = true; settingsOpen = true } },
+                onQuit = { java.awt.EventQueue.invokeLater { quit() } },
+            )
+        }
+        notifierRef = notifier
+        val nativeTray = remember { notifier.start() }
+        val statusLine = status(state)
+        LaunchedEffect(visible, statusLine) { notifier.update(visible, statusLine) }
+        if (!nativeTray) {
+            Tray(
+                icon = trayIcon,
+                tooltip = "SnapTV · $statusLine",
+                onAction = { visible = !visible },
+                menu = {
+                    Item(if (visible) "Hide window" else "Show window", onClick = { visible = !visible })
+                    Item("Settings", onClick = { visible = true; settingsOpen = true })
+                    Separator()
+                    Item("Quit SnapTV", onClick = quit)
+                },
+            )
+        }
 
         val window = rememberWindowState(size = DpSize(1280.dp, 720.dp))
         // Move to the chosen monitor first, then go full screen there.
@@ -109,9 +148,11 @@ fun main(args: Array<String>) {
         }
 
         Window(
-            onCloseRequest = { session.stop(); exitApplication() },
+            onCloseRequest = { visible = false },
+            visible = visible,
             state = window,
             title = "SnapTV",
+            icon = icon,
             onPreviewKeyEvent = { e ->
                 if (e.type != KeyEventType.KeyDown) return@Window false
                 if (settingsOpen) {

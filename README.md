@@ -39,7 +39,9 @@ what is playing instead of a blank menu.
 The same room and visualizers on a Linux desktop, full screen on the monitor you choose. Download
 `SnapTV-Desktop-<version>-x86_64.AppImage` from Releases, `chmod +x` it and run it. It plays
 through PipeWire/PulseAudio and finds snapserver by itself (or `--server HOST`). Keys: ← → style,
-↑ ↓ volume, M next monitor, F11 full screen, Esc leave full screen. Don't run it next to snapclient
+↑ ↓ volume, S settings, M next monitor, F11 full screen, Esc leave full screen. Closing the window
+keeps it playing from the system tray (click the icon to show it again; quit from its menu);
+`--tray` starts it there. Don't run it next to snapclient
 on the same machine, or that room plays twice.
 
 ## Installing
