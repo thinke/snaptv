@@ -1,0 +1,242 @@
+package io.github.thinke.snaptv.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.Button
+import androidx.tv.material3.ListItem
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Switch
+import androidx.tv.material3.Text
+import io.github.thinke.snaptv.BuildConfig
+import io.github.thinke.snaptv.Discovery
+import io.github.thinke.snaptv.PlaybackService
+import io.github.thinke.snaptv.Player
+import io.github.thinke.snaptv.Prefs
+
+@Composable
+fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val settings by prefs.settings.collectAsStateWithLifecycle()
+    val state by player.state.collectAsStateWithLifecycle()
+    val servers by remember { Discovery(context).servers() }.collectAsState(emptyList())
+    var picker by remember { mutableStateOf(false) }
+
+    if (picker) {
+        ServerPicker(
+            servers = servers.map { "${it.name} (${it.host})" to it },
+            current = settings.serverHost,
+            onAuto = { prefs.update { s -> s.copy(serverHost = "", serverPort = 1704) }; picker = false },
+            onPick = { host, port -> prefs.update { s -> s.copy(serverHost = host, serverPort = port) }; picker = false },
+            onBack = { picker = false },
+        )
+        return
+    }
+    BackHandler(onBack = onBack)
+    val first = remember { FocusRequester() }
+
+    Row(Modifier.fillMaxSize().background(Color(0xFF0D0F1A)).padding(horizontal = 56.dp, vertical = 36.dp)) {
+        Column(Modifier.width(260.dp).padding(end = 32.dp)) {
+            Text("Settings", style = MaterialTheme.typography.headlineLarge, color = Color.White)
+            Text(
+                "Changes apply immediately. Back returns to the visualizer.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 48.dp)) {
+            item {
+                val auto = settings.serverHost.isBlank()
+                val found = servers.firstOrNull()
+                ListItem(
+                    selected = false,
+                    onClick = { picker = true },
+                    headlineContent = { Text("Server") },
+                    supportingContent = {
+                        Text(
+                            if (auto) "Automatic" + (found?.let { " · found ${it.host}" } ?: " · searching…")
+                            else "${settings.serverHost}:${settings.serverPort}"
+                        )
+                    },
+                    modifier = Modifier.focusRequester(first),
+                )
+            }
+            item {
+                ListItem(
+                    selected = false,
+                    onClick = {},
+                    headlineContent = { Text("Audio delay") },
+                    supportingContent = { Text("Raise it if this TV sounds later than the other rooms. ◀ ▶ adjusts in 10 ms steps.") },
+                    trailingContent = { Text("${if (settings.latencyMs > 0) "+" else ""}${settings.latencyMs} ms") },
+                    modifier = Modifier.onPreviewKeyEvent { e ->
+                        if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        val step = when (e.key) {
+                            Key.DirectionRight -> 10
+                            Key.DirectionLeft -> -10
+                            else -> return@onPreviewKeyEvent false
+                        }
+                        prefs.update { it.copy(latencyMs = (it.latencyMs + step).coerceIn(-500, 2000)) }
+                        true
+                    },
+                )
+            }
+            item {
+                ListItem(
+                    selected = false,
+                    onClick = { prefs.update { it.copy(visualStyle = it.visualStyle + 1) } },
+                    headlineContent = { Text("Visualizer") },
+                    trailingContent = { Text(VisualStyle.of(settings.visualStyle).label) },
+                )
+            }
+            item {
+                Toggle("Start when the TV boots", "Play in the background like any other room speaker. Not possible on Android 15 and newer.", settings.startOnBoot) {
+                    prefs.update { s -> s.copy(startOnBoot = it) }
+                }
+            }
+            item {
+                Toggle("Keep screen on while music plays", "The screensaver still starts when nothing is playing.", settings.keepScreenOn) {
+                    prefs.update { s -> s.copy(keepScreenOn = it) }
+                }
+            }
+            item {
+                Toggle("Show sync statistics", "Clock offset, sync error and buffer levels on the visualizer screen.", settings.showStats) {
+                    prefs.update { s -> s.copy(showStats = it) }
+                }
+            }
+            item {
+                ListItem(
+                    selected = false,
+                    onClick = { if (state.active) PlaybackService.stop(context) else PlaybackService.start(context) },
+                    headlineContent = { Text(if (state.active) "Stop playback" else "Start playback") },
+                )
+            }
+            item {
+                ListItem(
+                    selected = false,
+                    onClick = {},
+                    headlineContent = { Text("About") },
+                    supportingContent = { Text("SnapTV ${BuildConfig.VERSION_NAME} · client id ${prefs.clientId}") },
+                )
+            }
+        }
+    }
+    LaunchedEffect(Unit) { first.requestFocus() }
+}
+
+@Composable
+private fun Toggle(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    ListItem(
+        selected = false,
+        onClick = { onChange(!checked) },
+        headlineContent = { Text(title) },
+        supportingContent = { Text(description) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = null) },
+    )
+}
+
+@Composable
+private fun <T : io.github.thinke.snaptv.DiscoveredServer> ServerPicker(
+    servers: List<Pair<String, T>>,
+    current: String,
+    onAuto: () -> Unit,
+    onPick: (String, Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    var address by remember { mutableStateOf(current) }
+    val first = remember { FocusRequester() }
+
+    Column(Modifier.fillMaxSize().background(Color(0xFF0D0F1A)).padding(horizontal = 56.dp, vertical = 36.dp)) {
+        Text("Choose server", style = MaterialTheme.typography.headlineLarge, color = Color.White)
+        Spacer16()
+        ListItem(
+            selected = current.isBlank(),
+            onClick = onAuto,
+            headlineContent = { Text("Automatic") },
+            supportingContent = { Text("Use the first snapserver announced on the network") },
+            modifier = Modifier.focusRequester(first),
+        )
+        servers.forEach { (label, server) ->
+            ListItem(
+                selected = current == server.host,
+                onClick = { onPick(server.host, server.port) },
+                headlineContent = { Text(label) },
+                supportingContent = { Text("port ${server.port}") },
+            )
+        }
+        Spacer16()
+        Text("Or enter an address", color = Color.White.copy(alpha = 0.7f))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Box(
+                Modifier
+                    .width(360.dp)
+                    .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                BasicTextField(
+                    value = address,
+                    onValueChange = { address = it.trim() },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 20.sp),
+                    cursorBrush = SolidColor(Color.White),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit(address, onPick) }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Button(onClick = { submit(address, onPick) }, modifier = Modifier.padding(start = 16.dp)) { Text("Connect") }
+        }
+    }
+    LaunchedEffect(Unit) { first.requestFocus() }
+}
+
+/** Accepts "host" or "host:port". */
+private fun submit(address: String, onPick: (String, Int) -> Unit) {
+    if (address.isBlank()) return
+    val host = address.substringBeforeLast(':', address)
+    val port = address.substringAfterLast(':', "").toIntOrNull() ?: 1704
+    onPick(host, port)
+}
+
+@Composable
+private fun Spacer16() = Box(Modifier.padding(top = 16.dp))
