@@ -46,4 +46,17 @@ class FlacDecoderTest {
     @Test fun lpcHighOrderLargeBlocks() = check("stereo_lax32.flac", 48000, 2)
     @Test fun mono() = check("mono_l5.flac", 44100, 1)
     @Test fun quietConstantAndWastedBits() = check("quiet_l5.flac", 48000, 2)
+
+    @Test
+    fun splitsIntoFramesThatDecodeTheSame() {
+        val bytes = javaClass.getResourceAsStream("/flac/stereo_l5.flac")!!.readBytes()
+        val start = audioOffset(bytes)
+        val whole = FlacDecoder().also { it.setHeader(bytes.copyOfRange(0, start)) }.decode(bytes.copyOfRange(start, bytes.size))
+        val d = FlacDecoder().also { it.setHeader(bytes.copyOfRange(0, start)) }
+        val frames = d.splitFrames(bytes.copyOfRange(start, bytes.size))
+        assertEquals(25, frames.size) // 0.6 s of 48 kHz = 28800 samples = 25 blocks of 1152
+        val joined = frames.flatMap { d.decode(it).toList() }
+        assertEquals(whole.toList(), joined)
+    }
 }
+

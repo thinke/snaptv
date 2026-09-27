@@ -69,7 +69,10 @@ does not wrap the native snapclient binary.
 The `core` module has no Android dependencies, so it is unit tested on the JVM. The `cli`
 module is a desktop test client that exercises it against a real server.
 
-Codecs: `flac`, `pcm`, `opus` and `ogg` (Vorbis) in the app. The desktop `cli` has no
+Codecs: `flac`, `pcm`, `opus` and `ogg` (Vorbis) in the app. Settings → Decoders picks the
+decoder per codec: SnapTV's own (FLAC, PCM), FFmpeg (FLAC; the bundled FFmpeg build has no Opus
+or Vorbis decoder) or any of the device's MediaCodec decoders; *Test decoders on this device*
+checks them all (bit-exact FLAC, tone and level for the lossy codecs, speed and delay). The desktop `cli` has no
 MediaCodec, so there `opus` and `ogg` are reported as unsupported.
 
 ## Building

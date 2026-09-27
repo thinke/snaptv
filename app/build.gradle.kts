@@ -15,6 +15,8 @@ android {
         versionCode = System.getenv("SNAPTV_VERSION_CODE")?.toInt() ?: 1
         versionName = System.getenv("SNAPTV_VERSION_NAME") ?: "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // FFmpeg ships native code per CPU type; 32-bit x86 TV boxes practically don't exist.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
     // Release signing comes from the environment so no key material lives in the repo.
@@ -61,6 +63,8 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.tv.material)
+    // FFmpeg audio decoders (GPL-3.0, like SnapTV), selectable per codec in Settings → Decoders.
+    implementation(libs.jellyfin.media3.ffmpeg)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

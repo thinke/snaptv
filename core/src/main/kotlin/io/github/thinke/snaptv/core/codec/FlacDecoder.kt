@@ -56,6 +56,23 @@ class FlacDecoder : Decoder {
         return out
     }
 
+    /**
+     * Splits FLAC audio (everything after the header) into single frames, the way snapserver's
+     * encoder hands them out. Needs [setHeader] first. Used to feed other decoders in tests.
+     */
+    fun splitFrames(audio: ByteArray): List<ByteArray> {
+        val out = ArrayList<ByteArray>()
+        val r = BitReader(audio, 0, audio.size)
+        var start = 0
+        while (r.bytesRemaining() >= 2) {
+            decodeFrame(r)
+            val end = audio.size - r.bytesRemaining()
+            out += audio.copyOfRange(start, end)
+            start = end
+        }
+        return out
+    }
+
     private fun decodeFrame(r: BitReader): ShortArray {
         val sync = r.readBits(14)
         if (sync != 0x3ffe) throw FlacException("lost frame sync")

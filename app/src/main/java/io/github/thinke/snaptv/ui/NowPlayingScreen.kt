@@ -230,6 +230,7 @@ private fun statsText(s: PlayerState, latencyMs: Int): String {
         appendLine("round trip    ${Player.ms(s.rttUs)} ms")
         appendLine("buffer        ${s.server.bufferMs} ms (+${s.server.latencyMs} server, +$latencyMs local)")
         appendLine("output queue  ${s.outputBufferMs} ms")
+        s.decoder?.let { appendLine("decoder       $it") }
         if (y != null) {
             appendLine("sync error    ${Player.ms(y.medianErrorUs)} ms (last ${Player.ms(y.lastErrorUs)})")
             appendLine("correction    ${y.correctionPpm} ppm")

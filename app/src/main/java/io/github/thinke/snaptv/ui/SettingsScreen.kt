@@ -68,6 +68,12 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     var login by remember { mutableStateOf(false) }
     var delayScreen by remember { mutableStateOf(false) }
     var updates by remember { mutableStateOf(false) }
+    var decoders by remember { mutableStateOf(false) }
+
+    if (decoders) {
+        DecodersScreen(prefs, onBack = { decoders = false })
+        return
+    }
 
     if (updates) {
         UpdatesScreen(context.app.updater, prefs, onBack = { updates = false })
@@ -234,6 +240,14 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                     selected = false,
                     onClick = { if (state.active) PlaybackService.stop(context) else PlaybackService.start(context) },
                     headlineContent = { Text(if (state.active) "Stop playback" else "Start playback") },
+                )
+            }
+            item {
+                ListItem(
+                    selected = false,
+                    onClick = { decoders = true },
+                    headlineContent = { Text("Decoders") },
+                    supportingContent = { Text(state.decoder?.let { "Now: $it" } ?: "SnapTV, FFmpeg or this device's decoders, per codec") },
                 )
             }
             item {

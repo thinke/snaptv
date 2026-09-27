@@ -42,7 +42,7 @@ private fun requireDecoder(codec: String, mime: String) {
  * gets a synthesised OpusHead with no pre-skip, so every decoded sample is played, as
  * snapclient does (see [Opus.csd]).
  */
-class OpusDecoder : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_OPUS) {
+class OpusDecoder(codecName: String? = null) : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_OPUS, codecName) {
     override fun setHeader(payload: ByteArray): SampleFormat {
         val f = Opus.parseHeader(payload)
         // snapserver always resamples to 48 kHz for Opus, and MediaCodec only outputs 48 kHz.
@@ -58,7 +58,7 @@ class OpusDecoder : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_OPUS) {
  * snapserver `ogg`: the codec header is the three Vorbis header packets in Ogg pages, chunks
  * are Ogg pages of audio packets. We demux in core and feed MediaCodec packet by packet.
  */
-class VorbisDecoder : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_VORBIS) {
+class VorbisDecoder(codecName: String? = null) : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_VORBIS, codecName) {
     private val demuxer = OggDemuxer()
 
     override fun setHeader(payload: ByteArray): SampleFormat {
@@ -79,6 +79,21 @@ class VorbisDecoder : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_VORBIS) {
 }
 
 /**
+ * snapserver `flac` through the device's FLAC decoder: the codec header ("fLaC" + metadata
+ * blocks) is what Android's decoder takes as csd-0, and each chunk holds whole frames.
+ */
+class FlacMediaCodecDecoder(codecName: String? = null) : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_FLAC, codecName) {
+    override fun setHeader(payload: ByteArray): SampleFormat {
+        val f = io.github.thinke.snaptv.core.codec.FlacDecoder().setHeader(payload)
+        // Our pipeline is 16-bit, and so is Android's FLAC decoder output by default.
+        open(SampleFormat(f.rate, 16, f.channels), listOf(payload))
+        return f
+    }
+
+    override fun decode(payload: ByteArray): ShortArray = decodePackets(listOf(payload))
+}
+
+/**
  * A chunk-at-a-time [Decoder] on top of a synchronously driven MediaCodec.
  *
  * MediaCodec decodes on its own thread and may return a chunk's audio during a later call.
@@ -87,7 +102,7 @@ class VorbisDecoder : MediaCodecDecoder(MediaFormat.MIMETYPE_AUDIO_VORBIS) {
  * (see [Decoder.carriedFrames]). So we only wait briefly for a chunk's own output, and not at
  * all once the codec has shown it runs behind.
  */
-abstract class MediaCodecDecoder(private val mime: String) : Decoder {
+abstract class MediaCodecDecoder(private val mime: String, private val codecName: String? = null) : Decoder {
     private var codec: MediaCodec? = null
     private var mediaFormat: MediaFormat? = null
     private lateinit var pcmFormat: SampleFormat
@@ -108,7 +123,7 @@ abstract class MediaCodecDecoder(private val mime: String) : Decoder {
     }
 
     private fun start(): MediaCodec {
-        val c = MediaCodec.createDecoderByType(mime)
+        val c = if (codecName != null) MediaCodec.createByCodecName(codecName) else MediaCodec.createDecoderByType(mime)
         try {
             c.configure(mediaFormat, null, null, 0)
             c.start()
@@ -186,6 +201,22 @@ abstract class MediaCodecDecoder(private val mime: String) : Decoder {
         if (channels != pcmFormat.channels || rate != pcmFormat.rate || encoding != AudioFormat.ENCODING_PCM_16BIT) {
             throw IllegalStateException("$mime decoder outputs $rate Hz, $channels ch, encoding $encoding; expected ${pcmFormat.rate} Hz, ${pcmFormat.channels} ch, 16-bit")
         }
+    }
+
+    override fun flush(): ShortArray {
+        val c = codec ?: return ShortArray(0)
+        output.beginChunk()
+        repeat(INPUT_ATTEMPTS) {
+            val index = c.dequeueInputBuffer(2000)
+            if (index >= 0) {
+                c.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                val deadline = System.nanoTime() + 2_000_000_000L
+                while (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM == 0 && System.nanoTime() < deadline) drain(c, 10_000)
+                return output.finish()
+            }
+            drain(c, 0)
+        }
+        return output.finish()
     }
 
     override fun close() {

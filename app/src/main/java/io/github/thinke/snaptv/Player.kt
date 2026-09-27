@@ -53,6 +53,8 @@ data class PlayerState(
     val audible: Boolean = false,
     /** Our name, group and stream from the control API; null until known. */
     val room: RoomInfo? = null,
+    /** The decoder actually in use, e.g. "FFmpeg 6.0 (flac)". */
+    val decoder: String? = null,
 )
 
 /**
@@ -87,7 +89,7 @@ class Player(context: Context, private val prefs: Prefs) {
         // serverError is what the status line shows today, so auth failures surface there too.
         override fun onAuthFailed(failure: AuthFailure) =
             _state.update { it.copy(authError = failure, serverError = failure.describe()) }
-    }, decoders = PlatformDecoders).also { it.tap = visual }
+    }, decoders = SelectableDecoders(prefs) { codec, label -> _state.update { it.copy(decoder = "$label ($codec)") } }).also { it.tap = visual }
 
     private val output = AudioOutput(engine)
 
@@ -150,7 +152,8 @@ class Player(context: Context, private val prefs: Prefs) {
         _state.update { it.copy(active = true) }
         sessionJob = scope.launch {
             // Reconnect whenever the chosen server, the login or the TLS setting changes.
-            prefs.settings.map { Endpoint(it.serverHost, it.serverPort, Credentials.of(it.authUser, it.authPassword), it.tlsTrustAll) }
+            // Also on a decoder change: the new decoder takes over at the next codec header.
+            prefs.settings.map { Endpoint(it.serverHost, it.serverPort, Credentials.of(it.authUser, it.authPassword), it.tlsTrustAll, it.decoders) }
                 .distinctUntilChanged().collect { (host, port, credentials, trustAll) ->
                 engine.stop()
                 control.stop()
@@ -351,7 +354,7 @@ class Player(context: Context, private val prefs: Prefs) {
         return kotlin.math.sqrt(sum / x.size)
     }
 
-    private data class Endpoint(val host: String, val port: Int, val credentials: Credentials?, val tlsTrustAll: Boolean)
+    private data class Endpoint(val host: String, val port: Int, val credentials: Credentials?, val tlsTrustAll: Boolean, val decoders: String)
 
     companion object {
         const val SYNC_TEST_PERIOD_US = 1_000_000L

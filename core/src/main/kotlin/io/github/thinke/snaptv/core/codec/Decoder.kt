@@ -30,6 +30,12 @@ interface Decoder {
     /** Releases native resources; the decoder is not used afterwards. */
     fun close() {}
 
+    /**
+     * Ends the input and returns whatever the decoder still holds. Streaming never ends, so
+     * only the decoder self-test uses this; decoders without output latency return nothing.
+     */
+    fun flush(): ShortArray = ShortArray(0)
+
     companion object {
         /** The decoders that need nothing from the platform. */
         fun forCodec(codec: String): Decoder = when (codec) {

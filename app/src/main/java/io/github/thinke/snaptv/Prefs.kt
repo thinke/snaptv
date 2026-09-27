@@ -31,7 +31,15 @@ data class AppSettings(
     /** Look for new releases on GitHub (on start and daily) and offer to install them. */
     val updateCheck: Boolean = true,
     val updatePrerelease: Boolean = false,
-)
+    /** Decoder choice per codec, "flac=kotlin;opus=ffmpeg" (Settings → Decoders); unset = default. */
+    val decoders: String = "",
+) {
+    fun decoderFor(codec: String): String? =
+        decoders.split(';').firstOrNull { it.startsWith("$codec=") }?.substringAfter('=')?.takeIf { it.isNotBlank() }
+
+    fun withDecoder(codec: String, id: String): AppSettings =
+        copy(decoders = (decoders.split(';').filter { it.isNotBlank() && !it.startsWith("$codec=") } + "$codec=$id").joinToString(";"))
+}
 
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("snaptv", Context.MODE_PRIVATE)
@@ -84,6 +92,7 @@ class Prefs(context: Context) {
             .putString("authPassword", next.authPassword)
             .putBoolean("updateCheck", next.updateCheck)
             .putBoolean("updatePrerelease", next.updatePrerelease)
+            .putString("decoders", next.decoders)
             .apply()
     }
 
@@ -102,6 +111,7 @@ class Prefs(context: Context) {
             authPassword = sp.getString("authPassword", d.authPassword) ?: "",
             updateCheck = sp.getBoolean("updateCheck", d.updateCheck),
             updatePrerelease = sp.getBoolean("updatePrerelease", d.updatePrerelease),
+            decoders = sp.getString("decoders", d.decoders) ?: "",
         )
     }
 
