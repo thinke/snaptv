@@ -34,6 +34,11 @@ data class AppSettings(
     /** Desktop: which monitor to fill, and whether full screen. */
     val monitor: Int = -1,
     val fullscreen: Boolean = true,
+    /** Desktop (Linux) only: "room" plays the house audio; "source" sends this computer's audio. */
+    val desktopMode: String = "room",
+    /** Source mode: snapserver's tcp input port, and the PipeWire output apps play into. */
+    val sourcePort: Int = 4953,
+    val sourceSink: String = "snapcast",
 ) {
     fun decoderFor(codec: String): String? =
         decoders.split(';').firstOrNull { it.startsWith("$codec=") }?.substringAfter('=')?.takeIf { it.isNotBlank() }
@@ -99,6 +104,9 @@ class Prefs(private val store: KeyValueStore, newClientId: () -> String) {
         store.putString("decoders", next.decoders)
         store.putInt("monitor", next.monitor)
         store.putBoolean("fullscreen", next.fullscreen)
+        store.putString("desktopMode", next.desktopMode)
+        store.putInt("sourcePort", next.sourcePort)
+        store.putString("sourceSink", next.sourceSink)
     }
 
     private fun load(): AppSettings {
@@ -119,6 +127,9 @@ class Prefs(private val store: KeyValueStore, newClientId: () -> String) {
             decoders = store.getString("decoders") ?: d.decoders,
             monitor = store.getInt("monitor", d.monitor),
             fullscreen = store.getBoolean("fullscreen", d.fullscreen),
+            desktopMode = store.getString("desktopMode") ?: d.desktopMode,
+            sourcePort = store.getInt("sourcePort", d.sourcePort),
+            sourceSink = store.getString("sourceSink") ?: d.sourceSink,
         )
     }
 

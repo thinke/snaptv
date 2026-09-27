@@ -63,6 +63,32 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
             Button(onClick = onClose) { Text("Done (Esc)") }
         }
 
+        Section("Mode") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                for ((mode, label) in listOf("room" to "Play this room", "source" to "Send this computer's audio")) {
+                    if (settings.desktopMode == mode) Button(onClick = {}) { Text(label) }
+                    else OutlinedButton(onClick = { prefs.update { it.copy(desktopMode = mode) } }) { Text(label) }
+                }
+            }
+            Text(
+                if (settings.desktopMode == "source")
+                    "Send: apps playing to the \"Snapcast (multiroom)\" output go to every room. SnapTV creates that output while it runs (or uses one that exists), and sends in exact real time so no delay builds up."
+                else "Play: this computer is a room and plays the house audio.",
+                color = Color.White.copy(alpha = 0.5f),
+            )
+            if (settings.desktopMode == "source") {
+                var port by remember { mutableStateOf(settings.sourcePort.toString()) }
+                var sink by remember { mutableStateOf(settings.sourceSink) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(value = port, onValueChange = { port = it.filter(Char::isDigit) }, singleLine = true, label = { Text("snapserver input port") }, modifier = Modifier.width(200.dp))
+                    OutlinedTextField(value = sink, onValueChange = { sink = it.trim() }, singleLine = true, label = { Text("output name") }, modifier = Modifier.width(240.dp))
+                    OutlinedButton(onClick = {
+                        prefs.update { it.copy(sourcePort = port.toIntOrNull() ?: 4953, sourceSink = sink.ifBlank { "snapcast" }) }
+                    }) { Text("Apply") }
+                }
+            }
+        }
+
         Section("Server") {
             var address by remember { mutableStateOf(settings.serverHost) }
             var error by remember { mutableStateOf<String?>(null) }
@@ -101,7 +127,7 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
             Text("Only if your snapserver requires a login.", color = Color.White.copy(alpha = 0.5f))
         }
 
-        Section("This room") {
+        if (settings.desktopMode == "room") Section("This room") {
             var name by remember(room?.clientName) { mutableStateOf(room?.clientName.orEmpty()) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, enabled = room != null, label = { Text("Name in Snapcast") })
@@ -125,7 +151,7 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
             }
         }
 
-        Section("Audio delay") {
+        if (settings.desktopMode == "room") Section("Audio delay") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("${if (delay > 0) "+" else ""}$delay ms", color = MaterialTheme.colors.primary, style = MaterialTheme.typography.h5, modifier = Modifier.width(140.dp))
                 for (step in listOf(-50, -10, 10, 50)) OutlinedButton(onClick = { session.adjustAudioDelay(step) }) { Text(if (step > 0) "+$step" else "$step") }

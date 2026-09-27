@@ -45,6 +45,23 @@ keeps it playing from the system tray: the tray icon's menu shows the window aga
 AppImage carries update information for AppImageUpdate and Gear Lever too. Don't run it next to snapclient
 on the same machine, or that room plays twice.
 
+### Send mode
+
+SnapTV Desktop can instead be the *source*: Settings → Mode → *Send this computer's audio*. It
+creates a PipeWire output called **Snapcast (multiroom)**; whatever you play into it goes to the
+rooms, and the visualizer shows what is being sent. It sends to a tcp input on snapserver, which
+needs one in `snapserver.conf`:
+
+```ini
+[stream]
+source = tcp://0.0.0.0:4953?name=Laptop&mode=server&sampleformat=48000:16:2
+```
+
+Audio is sent exactly in real time by the computer's clock (a frame is dropped or repeated now and
+then to absorb clock drift), so no delay builds up at the server over time. If the output goes
+away or PipeWire restarts, it recreates the output and reconnects. One mode at a time: a computer
+either plays a room or sends. Linux only.
+
 ## Installing
 
 Download `snaptv-<version>.apk` from [Releases](https://github.com/thinke/snaptv/releases) and

@@ -12,13 +12,15 @@ import java.nio.ByteOrder
 
 /** The few calls of libpulse-simple we need (PipeWire provides it via pipewire-pulseaudio). */
 @Suppress("FunctionName")
-private interface PulseSimple : Library {
+internal interface PulseSimple : Library {
     fun pa_simple_new(
         server: String?, name: String, dir: Int, dev: String?, streamName: String,
         ss: SampleSpec, map: Pointer?, attr: BufferAttr?, error: IntByReference,
     ): Pointer?
 
     fun pa_simple_write(s: Pointer, data: ByteArray, bytes: Long, error: IntByReference): Int
+    /** Blocks until [bytes] have been recorded. */
+    fun pa_simple_read(s: Pointer, data: ByteArray, bytes: Long, error: IntByReference): Int
     /** Microseconds until a sample written now is played (pa_usec_t). */
     fun pa_simple_get_latency(s: Pointer, error: IntByReference): Long
     fun pa_simple_free(s: Pointer)
@@ -40,7 +42,8 @@ class BufferAttr : Structure() {
     @JvmField var fragsize: Int = -1
 }
 
-private const val PA_STREAM_PLAYBACK = 1
+internal const val PA_STREAM_PLAYBACK = 1
+internal const val PA_STREAM_RECORD = 2
 private const val PA_SAMPLE_S16LE = 3
 
 /**

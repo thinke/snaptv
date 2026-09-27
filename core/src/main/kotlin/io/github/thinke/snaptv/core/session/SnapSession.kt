@@ -253,6 +253,7 @@ class SnapSession(
             while (true) {
                 discover()?.let { return it }
                 _state.update { it.copy(connection = ConnectionState.Failed("", 0, "no snapserver found on the network")) }
+                delay(DISCOVERY_RETRY_MS)
             }
         } finally {
             _state.update { it.copy(discovering = false) }
@@ -275,6 +276,8 @@ class SnapSession(
 
     companion object {
         const val MAX_DELAY_MS = 2000
+        /** Pause between mDNS searches while no server is found. */
+        private const val DISCOVERY_RETRY_MS = 10_000L
         private const val AUDIBLE_RMS = 0.001f // about -60 dBFS
         private const val AUDIBLE_HOLD_US = 8_000_000L
 

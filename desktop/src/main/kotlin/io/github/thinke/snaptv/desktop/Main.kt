@@ -92,7 +92,33 @@ fun main(args: Array<String>) {
         discover = { discover() },
     )
     session.setDecoderLabel("SnapTV (built-in)")
-    session.start()
+    // Play (a room) or Send (this computer is the source); one at a time, switched in Settings.
+    val source = SourceMode(session.visual)
+    // Command-line overrides for this run only (not saved): --mode room|source --source-port N --sink NAME
+    val modeOverride = opt("--mode")
+    val portOverride = opt("--source-port")?.toIntOrNull()
+    val sinkOverride = opt("--sink")
+    // Bumped on every mode change, so a source still looking for its server gives up.
+    val modeGen = java.util.concurrent.atomic.AtomicInteger()
+    fun applyMode(mode: String) {
+        val gen = modeGen.incrementAndGet()
+        if (mode == "source") {
+            session.stop()
+            Thread({
+                val s = prefs.settings.value
+                var host: String? = null
+                while (host == null && gen == modeGen.get()) {
+                    host = s.serverHost.takeIf { it.isNotBlank() }?.let { runCatching { ServerAddress.fromStored(it, s.serverPort).host }.getOrNull() } ?: discover()?.host
+                    if (host == null) Thread.sleep(DISCOVERY_RETRY_MS)
+                }
+                if (host != null && gen == modeGen.get()) source.start(host, portOverride ?: s.sourcePort, sinkOverride ?: s.sourceSink)
+            }, "source-start").apply { isDaemon = true; start() }
+        } else {
+            source.stop()
+            session.start()
+        }
+    }
+    applyMode(modeOverride ?: prefs.settings.value.desktopMode)
     lateinit var exit: () -> Unit
     val updater = DesktopUpdater(prefs, args) { exit() }
     updater.startChecking()
@@ -110,7 +136,15 @@ fun main(args: Array<String>) {
         // Java's Linux tray (XEmbed) has no transparency, so the tray icon is opaque edge to edge.
         val trayIcon = remember { BitmapPainter(useResource("snaptv-tray.png") { loadImageBitmap(it) }) }
         lateinit var notifierRef: StatusNotifier
-        val quit = { notifierRef.stop(); session.stop(); exitApplication() }
+        val quit = { notifierRef.stop(); source.stop(); session.stop(); exitApplication() }
+        val sourceState by source.state.collectAsState()
+        // Re-apply when the mode changes, or the source port/output while sending.
+        val modeKey = Triple(settings.desktopMode, settings.sourcePort, settings.sourceSink)
+        var applied by remember { mutableStateOf(modeKey) }
+        LaunchedEffect(modeKey) {
+            if (modeKey != applied) { applied = modeKey; applyMode(modeKey.first) }
+        }
+        val sending = (modeOverride ?: settings.desktopMode) == "source"
         exit = quit
         val update by updater.state.collectAsState()
         var updateDismissed by remember { mutableStateOf(false) }
@@ -126,7 +160,7 @@ fun main(args: Array<String>) {
         }
         notifierRef = notifier
         val nativeTray = remember { notifier.start() }
-        val statusLine = status(state)
+        val statusLine = if (sending) sourceStatus(sourceState) else status(state)
         LaunchedEffect(visible, statusLine) { notifier.update(visible, statusLine) }
         // After hiding, give the freed window memory back instead of waiting for the next GC.
         LaunchedEffect(visible) { if (!visible) { delay(2000); releaseMemory() } }
@@ -188,7 +222,7 @@ fun main(args: Array<String>) {
                         SettingsPanel(session, updater, screens.size, monitor, onClose = { settingsOpen = false })
                     } else {
                         Box {
-                            NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size) { settingsOpen = true }
+                            NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size, if (sending) sourceState else null) { settingsOpen = true }
                             val offered = (update as? UpdateState.Available)?.release
                             val busy = update is UpdateState.Downloading || (update is UpdateState.Failed && (update as UpdateState.Failed).release != null)
                             if (!updateDismissed && ((offered != null && !updater.isSkipped(offered)) || busy)) {
@@ -203,7 +237,7 @@ fun main(args: Array<String>) {
 }
 
 @Composable
-private fun NowPlaying(session: SnapSession, s: PlayerState, style: VisualStyle, stats: Boolean, pokes: Int, monitor: Int, monitors: Int, openSettings: () -> Unit) {
+private fun NowPlaying(session: SnapSession, s: PlayerState, style: VisualStyle, stats: Boolean, pokes: Int, monitor: Int, monitors: Int, sending: SourceState?, openSettings: () -> Unit) {
     var overlay by remember { mutableStateOf(true) }
     LaunchedEffect(pokes) {
         overlay = true
@@ -212,14 +246,20 @@ private fun NowPlaying(session: SnapSession, s: PlayerState, style: VisualStyle,
     }
     Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = openSettings)) {
         Visualizer(session.visual, style, Modifier.fillMaxSize())
-        AnimatedVisibility(overlay || !s.audible, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(overlay || (sending == null && !s.audible), enter = fadeIn(), exit = fadeOut()) {
             Box(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 32.dp)) {
                 Column(Modifier.align(Alignment.TopStart)) {
-                    val track = s.room?.stream?.track
-                    Text(track?.title ?: s.room?.clientName?.takeIf { it.isNotBlank() } ?: "SnapTV Desktop", color = Color.White, fontSize = 34.sp)
-                    val detail = track?.let { listOfNotNull(it.artist, it.album).joinToString(" · ") } ?: s.room?.stream?.id?.let { "source $it" }
-                    detail?.let { Text(it, color = Color.White.copy(alpha = 0.85f), fontSize = 18.sp) }
-                    Text(status(s), color = Color.White.copy(alpha = 0.6f), fontSize = 16.sp)
+                    if (sending != null) {
+                        Text("Snapcast source", color = Color.White, fontSize = 34.sp)
+                        Text("Apps playing to \"Snapcast (multiroom)\" go to every room", color = Color.White.copy(alpha = 0.85f), fontSize = 18.sp)
+                        Text(sourceStatus(sending), color = Color.White.copy(alpha = 0.6f), fontSize = 16.sp)
+                    } else {
+                        val track = s.room?.stream?.track
+                        Text(track?.title ?: s.room?.clientName?.takeIf { it.isNotBlank() } ?: "SnapTV Desktop", color = Color.White, fontSize = 34.sp)
+                        val detail = track?.let { listOfNotNull(it.artist, it.album).joinToString(" · ") } ?: s.room?.stream?.id?.let { "source $it" }
+                        detail?.let { Text(it, color = Color.White.copy(alpha = 0.85f), fontSize = 18.sp) }
+                        Text(status(s), color = Color.White.copy(alpha = 0.6f), fontSize = 16.sp)
+                    }
                 }
                 Row(Modifier.align(Alignment.BottomStart).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Hint("← →  ${style.label}")
@@ -231,7 +271,7 @@ private fun NowPlaying(session: SnapSession, s: PlayerState, style: VisualStyle,
         }
         if (stats) {
             Text(
-                statsText(s),
+                if (sending != null) sourceStatsText(sending) else statsText(s),
                 color = Color.White.copy(alpha = 0.8f),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
@@ -282,8 +322,20 @@ private fun releaseMemory() {
     runCatching { com.sun.jna.NativeLibrary.getInstance("c").getFunction("malloc_trim").invokeInt(arrayOf(0)) }
 }
 
+fun sourceStatus(s: SourceState): String = s.error?.let { "${s.status} ($it)" } ?: s.status
+
+fun sourceStatsText(s: SourceState): String = buildString {
+    appendLine("output        ${s.sinkName} (\"Snapcast (multiroom)\")")
+    appendLine("buffered      ${s.bufferedMs} ms")
+    appendLine("sent          ${s.sentSeconds} s")
+    append("drift fixes   ${s.dropped} dropped, ${s.padded} padded")
+}
+
 /** First snapserver announced over mDNS, by its IPv4 address. */
-private fun discover(): ServerAddress? {
+private const val DISCOVERY_RETRY_MS = 10_000L
+
+/** One mDNS search: each IPv4 interface is asked for `_snapcast._tcp` for up to 4 s. */
+internal fun discover(): ServerAddress? {
     val addresses = java.net.NetworkInterface.getNetworkInterfaces().toList()
         .filter { it.isUp && !it.isLoopback }
         .flatMap { it.inetAddresses.toList() }

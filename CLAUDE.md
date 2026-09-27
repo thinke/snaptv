@@ -42,7 +42,8 @@ table below with every such change.
 | Remote / touch / mouse / keyboard input | ✅ D-pad, touch, mouse | ✅ keyboard, mouse | |
 | Multi-monitor full screen | n/a | ✅ | desktop only |
 | Background playback | ✅ foreground service | ✅ system tray (KDE StatusNotifierItem, symbolic icon; XEmbed fallback) | closing only hides the window; the tray icon's menu (left or right click) shows it or quits |
-| Start at boot / login | ✅ (not on Android 15+) | ❌ | `--tray` is ready for an autostart entry |
+| Start at boot / login | ✅ (not on Android 15+) | ❌ | `--tray` is ready for an autostart entry (the dev laptop uses `~/.config/autostart`) |
+| Send mode: be the source (PipeWire output → snapserver tcp input, paced by the monotonic clock) | n/a | ✅ | Linux only by design; `SourceMode.kt`, one mode at a time (`desktopMode`) |
 | Hidden: sync test through snapcast | ⏸ | ⏸ | parked; `SHOW_SNAPCAST_SYNC_TEST` |
 
 ## Building
@@ -53,7 +54,7 @@ System Java on the dev machine is a JRE only: use `JAVA_HOME=~/tools/jdk-21`.
 ./gradlew :core:test                         # unit tests
 ./gradlew :app:assembleDebug                 # Android debug APK
 ANDROID_SERIAL=emulator-5556 ./gradlew :app:connectedDebugAndroidTest   # on one device only
-./gradlew :desktop:run --args="--server HOST --windowed"
+./gradlew :desktop:run --args="--server HOST --windowed"   # also --mode source --source-port N --sink NAME (not saved)
 desktop/packaging/make-appimage.sh           # SnapTV-Desktop-x86_64.AppImage (needs appimagetool)
 ```
 

@@ -39,6 +39,7 @@ dependencies {
     implementation(compose.material)
     implementation(libs.jna)
     implementation(libs.jmdns)
+    implementation(libs.kotlinx.serialization.json)
     // KDE's own tray protocol (StatusNotifierItem over D-Bus), for a transparent icon and native menu.
     implementation(libs.dbus.java.core)
     implementation(libs.dbus.java.unixsocket)
