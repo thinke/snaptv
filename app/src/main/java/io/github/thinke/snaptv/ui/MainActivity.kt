@@ -15,12 +15,23 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 import io.github.thinke.snaptv.PlaybackService
+import io.github.thinke.snaptv.UpdateState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.thinke.snaptv.app
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    override fun onResume() {
+        super.onResume()
+        val updater = app.updater
+        // Back from the "install unknown apps" screen with the switch on: carry on installing.
+        val pending = updater.state.value
+        if (pending is UpdateState.NeedsPermission && packageManager.canRequestPackageInstalls()) updater.install(pending.release)
+        updater.checkIfDue()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Opening the app always (re)starts playback; the service outlives the activity.
@@ -33,6 +44,16 @@ class MainActivity : ComponentActivity() {
                 var settingsOpen by rememberSaveable { mutableStateOf(false) }
                 if (settingsOpen) SettingsScreen(player, prefs, onBack = { settingsOpen = false })
                 else NowPlayingScreen(player, prefs, onOpenSettings = { settingsOpen = true })
+
+                // Offer a new release once per app start (unless skipped); Settings → Updates always works.
+                val update by app.updater.state.collectAsStateWithLifecycle()
+                var promptDismissed by rememberSaveable { mutableStateOf(false) }
+                val offered = (update as? UpdateState.Available)?.release
+                val busy = update is UpdateState.Downloading || update is UpdateState.Installing ||
+                    update is UpdateState.NeedsPermission || (update is UpdateState.Failed && (update as UpdateState.Failed).release != null)
+                if (!settingsOpen && !promptDismissed && ((offered != null && !app.updater.isSkipped(offered)) || busy)) {
+                    UpdatePrompt(app.updater, onClose = { promptDismissed = true })
+                }
             }
         }
 

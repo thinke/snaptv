@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Only for measuring the audio delay (Settings → Audio delay → Measure). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Installing updates from GitHub releases; Android asks the user every time. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- TV first, but nothing stops it running on a phone or tablet. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -56,6 +58,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".InstallResultReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"

@@ -53,6 +53,7 @@ import io.github.thinke.snaptv.Discovery
 import io.github.thinke.snaptv.PlaybackService
 import io.github.thinke.snaptv.Player
 import io.github.thinke.snaptv.Prefs
+import io.github.thinke.snaptv.app
 import io.github.thinke.snaptv.core.transport.ServerAddress
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -67,6 +68,12 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
     var renaming by remember { mutableStateOf(false) }
     var login by remember { mutableStateOf(false) }
     var delayScreen by remember { mutableStateOf(false) }
+    var updates by remember { mutableStateOf(false) }
+
+    if (updates) {
+        UpdatesScreen(context.app.updater, prefs, onBack = { updates = false })
+        return
+    }
 
     if (delayScreen) {
         AudioDelayScreen(player, prefs, onBack = { delayScreen = false })
@@ -228,6 +235,14 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                     selected = false,
                     onClick = { if (state.active) PlaybackService.stop(context) else PlaybackService.start(context) },
                     headlineContent = { Text(if (state.active) "Stop playback" else "Start playback") },
+                )
+            }
+            item {
+                ListItem(
+                    selected = false,
+                    onClick = { updates = true },
+                    headlineContent = { Text("Updates") },
+                    supportingContent = { Text("Check GitHub for a newer SnapTV") },
                 )
             }
             item {

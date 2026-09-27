@@ -28,6 +28,9 @@ data class AppSettings(
      */
     val authUser: String = "",
     val authPassword: String = "",
+    /** Look for new releases on GitHub (on start and daily) and offer to install them. */
+    val updateCheck: Boolean = true,
+    val updatePrerelease: Boolean = false,
 )
 
 class Prefs(context: Context) {
@@ -44,6 +47,15 @@ class Prefs(context: Context) {
         sp.edit().putString(KEY_CLIENT_ID, id).apply()
         id
     }
+
+    var lastUpdateCheck: Long
+        get() = sp.getLong("lastUpdateCheck", 0)
+        set(v) = sp.edit().putLong("lastUpdateCheck", v).apply()
+
+    /** A version the user chose to skip; not offered again (a newer one still is). */
+    var skippedVersion: String?
+        get() = sp.getString("skippedVersion", null)
+        set(v) = sp.edit().putString("skippedVersion", v).apply()
 
     fun update(transform: (AppSettings) -> AppSettings) {
         val next = transform(_settings.value)
@@ -62,6 +74,8 @@ class Prefs(context: Context) {
             // EncryptedSharedPreferences would add a dependency for little gain: snapcast sends
             // it as base64 over unencrypted TCP anyway, so it is a LAN password, not a secret.
             .putString("authPassword", next.authPassword)
+            .putBoolean("updateCheck", next.updateCheck)
+            .putBoolean("updatePrerelease", next.updatePrerelease)
             .apply()
     }
 
@@ -78,6 +92,8 @@ class Prefs(context: Context) {
             showStats = sp.getBoolean("showStats", d.showStats),
             authUser = sp.getString("authUser", d.authUser) ?: "",
             authPassword = sp.getString("authPassword", d.authPassword) ?: "",
+            updateCheck = sp.getBoolean("updateCheck", d.updateCheck),
+            updatePrerelease = sp.getBoolean("updatePrerelease", d.updatePrerelease),
         )
     }
 

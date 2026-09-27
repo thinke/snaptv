@@ -26,6 +26,11 @@ Download `snaptv-<version>.apk` from [Releases](https://github.com/thinke/snaptv
 sideload it onto the TV with `adb install snaptv-<version>.apk`, or with a file-transfer app on
 the TV. Open SnapTV once. It finds snapserver on your network and starts playing.
 
+SnapTV checks GitHub for new releases when it starts and once a day, and offers to install
+them (Settings → Updates). Downloads are checked against the published SHA-256 and must be
+signed with the same key; Android asks before installing. The first time, Android also asks
+you to allow SnapTV to install apps.
+
 To use the visualizer as the screensaver, pick *SnapTV visualizer* under Settings → System →
 Ambient mode / Screen saver. Some Google TV builds hide third-party screensavers; there you can
 set it with

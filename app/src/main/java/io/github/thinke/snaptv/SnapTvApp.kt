@@ -9,11 +9,14 @@ class SnapTvApp : Application() {
         private set
     lateinit var player: Player
         private set
+    lateinit var updater: Updater
+        private set
 
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
         player = Player(this, prefs)
+        updater = Updater(this, prefs, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(PlaybackService.CHANNEL_ID, getString(R.string.channel_playback), NotificationManager.IMPORTANCE_LOW)
         )
