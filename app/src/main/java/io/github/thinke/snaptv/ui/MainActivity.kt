@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,6 +33,8 @@ class MainActivity : ComponentActivity() {
         updater.checkOnStart()
     }
 
+    private val shaderEffects = GlesShaderEffects()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Opening the app always (re)starts playback; the service outlives the activity.
@@ -40,6 +43,8 @@ class MainActivity : ComponentActivity() {
         val player = app.player
         val prefs = app.prefs
         setContent {
+            // GPU visualizer styles (OpenGL ES) next to the Canvas ones.
+            CompositionLocalProvider(LocalShaderEffects provides shaderEffects) {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
                 var settingsOpen by rememberSaveable { mutableStateOf(false) }
                 if (settingsOpen) SettingsScreen(player, prefs, onBack = { settingsOpen = false })
@@ -54,6 +59,7 @@ class MainActivity : ComponentActivity() {
                 if (!settingsOpen && !promptDismissed && ((offered != null && !app.updater.isSkipped(offered)) || busy)) {
                     UpdatePrompt(app.updater, onClose = { promptDismissed = true })
                 }
+            }
             }
         }
 

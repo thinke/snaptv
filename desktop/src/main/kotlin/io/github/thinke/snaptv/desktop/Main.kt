@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.darkColors
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -51,7 +52,9 @@ import io.github.thinke.snaptv.core.session.PlayerState
 import io.github.thinke.snaptv.core.session.SnapSession
 import io.github.thinke.snaptv.core.transport.Scheme
 import io.github.thinke.snaptv.core.transport.ServerAddress
+import io.github.thinke.snaptv.ui.LocalShaderEffects
 import io.github.thinke.snaptv.ui.VisualStyle
+import io.github.thinke.snaptv.ui.visualStyleOf
 import io.github.thinke.snaptv.ui.Visualizer
 import kotlinx.coroutines.delay
 import java.awt.GraphicsEnvironment
@@ -127,6 +130,9 @@ fun main(args: Array<String>) {
     lateinit var restart: (relaunch: () -> Unit) -> Unit
     val updater = DesktopUpdater(prefs, args) { relaunch -> restart(relaunch) }
     updater.startChecking()
+
+    // GPU visualizer styles (Skia runtime shaders); the TV app draws only the Canvas ones so far.
+    val shaderEffects = SkiaShaderEffects()
 
     application {
         val state by session.state.collectAsState()
@@ -226,11 +232,12 @@ fun main(args: Array<String>) {
                 },
             ) {
                 MaterialTheme(colors = darkColors(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
+                  CompositionLocalProvider(LocalShaderEffects provides shaderEffects) {
                     if (settingsOpen) {
                         SettingsPanel(session, updater, screens.size, monitor, onClose = { settingsOpen = false })
                     } else {
                         Box {
-                            NowPlaying(session, state, VisualStyle.of(settings.visualStyle), settings.showStats, pokes, monitor, screens.size, if (sending) sourceState else null) { settingsOpen = true }
+                            NowPlaying(session, state, visualStyleOf(settings.visualStyle), settings.showStats, pokes, monitor, screens.size, if (sending) sourceState else null) { settingsOpen = true }
                             val offered = (update as? UpdateState.Available)?.release
                             val busy = update is UpdateState.Downloading || (update is UpdateState.Failed && (update as UpdateState.Failed).release != null)
                             if (!updateDismissed && ((offered != null && !updater.isSkipped(offered)) || busy)) {
@@ -238,6 +245,7 @@ fun main(args: Array<String>) {
                             }
                         }
                     }
+                  }
                 }
             }
         }

@@ -52,7 +52,7 @@ fun DreamScreen(player: Player, prefs: Prefs) {
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         if (state.audible) {
-            Visualizer(player.visual, VisualStyle.of(settings.visualStyle), Modifier.fillMaxSize().alpha(0.85f))
+            Visualizer(player.visual, visualStyleOf(settings.visualStyle), Modifier.fillMaxSize().alpha(0.85f))
         }
         val track = state.room?.stream?.track
         Column(

@@ -76,5 +76,5 @@ tasks.register<JavaExec>("renderVisuals") {
     group = "verification"
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.thinke.snaptv.desktop.RenderVisualsKt")
-    args(providers.gradleProperty("out").orElse(layout.buildDirectory.dir("visuals").get().asFile.path).get())
+    args(listOfNotNull(providers.gradleProperty("out").orElse(layout.buildDirectory.dir("visuals").get().asFile.path).get(), providers.gradleProperty("style").orNull))
 }

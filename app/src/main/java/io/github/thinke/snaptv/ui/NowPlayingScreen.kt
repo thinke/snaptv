@@ -51,7 +51,7 @@ import kotlinx.coroutines.delay
 fun NowPlayingScreen(player: Player, prefs: Prefs, onOpenSettings: () -> Unit) {
     val state by player.state.collectAsStateWithLifecycle()
     val settings by prefs.settings.collectAsStateWithLifecycle()
-    val style = VisualStyle.of(settings.visualStyle)
+    val style = visualStyleOf(settings.visualStyle)
     val focus = remember { FocusRequester() }
     val touch = hasTouch()
 

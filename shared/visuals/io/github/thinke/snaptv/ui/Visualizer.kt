@@ -25,7 +25,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-enum class VisualStyle(val label: String) {
+enum class VisualStyle(val label: String, val gpu: Boolean = false) {
     Bars("Spectrum"),
     Halo("Halo"),
     Scope("Oscilloscope"),
@@ -33,10 +33,15 @@ enum class VisualStyle(val label: String) {
     Starfield("Starfield"),
     Pulse("Pulse"),
     Liquid("Liquid"),
+    Tunnel("Tunnel", gpu = true),
     ;
 
     companion object {
-        fun of(index: Int) = entries[Math.floorMod(index, entries.size)]
+        /** The style for a saved index, among those this platform can draw ([gpu]: it runs shaders). */
+        fun of(index: Int, gpu: Boolean = false): VisualStyle {
+            val available = if (gpu) entries else entries.filter { !it.gpu }
+            return available[Math.floorMod(index, available.size)]
+        }
     }
 }
 
@@ -50,7 +55,9 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
     val samples = remember { FloatArray(2048) }
     val path = remember { Path() }
     val scene = remember { Scene(spectrum.bands) }
-    var frameNanos by remember { mutableLongStateOf(0L) }
+    val shaders = LocalShaderEffects.current
+    val inputs = remember { ShaderInputs() }
+    val frame = remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(visual) {
         var last = 0L
@@ -62,13 +69,18 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
                 if (visual.window(System.nanoTime() / 1000, samples)) spectrum.update(samples, visual.sampleRate, dt)
                 else spectrum.decay(dt)
                 scene.step(spectrum, samples, visual.sampleRate, dt)
-                frameNanos = t
+                if (style.gpu) scene.fillShaderInputs(inputs, spectrum, t / 1e9f, dt)
+                frame.longValue = t
             }
         }
     }
 
+    if (style.gpu && shaders != null) {
+        shaders.Effect(style, inputs, frame, modifier)
+        return
+    }
     Canvas(modifier) {
-        val time = frameNanos / 1e9f // reading this state redraws every frame
+        val time = frame.longValue / 1e9f // reading this state redraws every frame
         drawBackdrop(spectrum, time)
         when (style) {
             VisualStyle.Bars -> drawBars(spectrum, time)
@@ -78,6 +90,7 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
             VisualStyle.Starfield -> drawStarfield(scene, spectrum, time)
             VisualStyle.Pulse -> drawPulse(scene, spectrum, time)
             VisualStyle.Liquid -> drawLiquid(scene, spectrum, path, time)
+            VisualStyle.Tunnel -> Unit // GPU style, shown by ShaderEffects above
         }
     }
 }

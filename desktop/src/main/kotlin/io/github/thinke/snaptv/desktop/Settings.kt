@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import io.github.thinke.snaptv.core.session.SnapSession
 import io.github.thinke.snaptv.core.transport.ServerAddress
 import io.github.thinke.snaptv.ui.VisualStyle
+import io.github.thinke.snaptv.ui.visualStyleOf
 
 /**
  * The desktop's settings, the same as the TV's where they apply (see CLAUDE.md, feature parity):
@@ -168,7 +169,7 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
 
         Section("Screen") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Visualizer: ${VisualStyle.of(settings.visualStyle).label}", color = Color.White, modifier = Modifier.width(240.dp))
+                Text("Visualizer: ${visualStyleOf(settings.visualStyle).label}", color = Color.White, modifier = Modifier.width(240.dp))
                 OutlinedButton(onClick = { prefs.update { it.copy(visualStyle = it.visualStyle + 1) } }) { Text("Next style") }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

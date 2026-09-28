@@ -1,5 +1,8 @@
 package io.github.thinke.snaptv
 
+import androidx.compose.runtime.CompositionLocalProvider
+import io.github.thinke.snaptv.ui.GlesShaderEffects
+import io.github.thinke.snaptv.ui.LocalShaderEffects
 import android.service.dreams.DreamService
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
@@ -39,7 +42,7 @@ class VisualizerDream : DreamService(), LifecycleOwner, SavedStateRegistryOwner 
         val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@VisualizerDream)
             setViewTreeSavedStateRegistryOwner(this@VisualizerDream)
-            setContent { DreamScreen(app.player, app.prefs) }
+            setContent { CompositionLocalProvider(LocalShaderEffects provides GlesShaderEffects()) { DreamScreen(app.player, app.prefs) } }
         }
         setContentView(view)
     }

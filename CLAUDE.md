@@ -31,6 +31,7 @@ table below with every such change.
 | Transports: tcp, ws, wss; auth; accept-any-certificate | ✅ | ✅ | `core`; both Settings UIs |
 | Server discovery (mDNS) | ✅ NSD | ✅ JmDNS | |
 | Visualizers: Spectrum, Halo, Oscilloscope, Ridges, Starfield, Pulse, Liquid | ✅ | ✅ | `shared/visuals` |
+| GPU visualizer styles (fragment shaders): Tunnel | ✅ OpenGL ES 2 view (`GlesShaders.kt`) | ✅ Skia runtime shader (`SkiaShaders.kt`) | effect code shared in `shared/visuals/Shaders.kt`; each platform adds uniforms, `band()` and `main()` |
 | Room/track names, source switching, rename (JSON-RPC) | ✅ | ✅ | `SnapSession` |
 | Audio delay stored as server latency, adjustable (−50/−10/+10/+50, reset) | ✅ | ✅ | `SnapSession` |
 | Picture sync test / microphone measurement | ✅ | ❌ | |
@@ -52,6 +53,12 @@ TV CPUs are slow and Skia cuts anti-aliased fills and strokes wider than a pixel
 on the CPU every frame (Ridges drawn that way ran at 23 fps on the TCL TV). Draw long shapes as
 fills with anti-aliasing off plus 1-pixel hairline paths, avoid big overlapping gradients, and
 time new styles on the TV with the bench build (`dumpsys gfxinfo io.github.thinke.snaptv.bench`).
+
+GPU styles (shaders) on the TV's PowerVR BXE-4-32 (~25 GFLOPS): drawn at 2/3 size and scaled
+up, 16-bit maths (`mediump`), so keep every number small: pass anything that grows (distance
+flown) as a 0..1 phase from the CPU, and work out per-frame constants there, not per pixel.
+Spectrum levels are a 24x1 texture on GL (one lookup) rather than a loop. Their frame rate is
+logged by the bench build (`adb logcat -s SnapTV.GL`); gfxinfo doesn't see GL surfaces.
 
 ## Building
 

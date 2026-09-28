@@ -3,12 +3,14 @@ package io.github.thinke.snaptv.desktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Density
 import io.github.thinke.snaptv.core.visual.DemoSong
 import io.github.thinke.snaptv.core.visual.VisualBuffer
+import io.github.thinke.snaptv.ui.LocalShaderEffects
 import io.github.thinke.snaptv.ui.VisualStyle
 import io.github.thinke.snaptv.ui.Visualizer
 import org.jetbrains.skia.EncodedImageFormat
@@ -21,12 +23,16 @@ import java.io.File
  */
 fun main(args: Array<String>) {
     val out = File(args.firstOrNull() ?: "build/visuals").apply { mkdirs() }
+    val only = args.getOrNull(1) // one style by name, or all
     val rate = 48000
-    for (style in VisualStyle.entries) {
+    val shaders = SkiaShaderEffects()
+    for (style in VisualStyle.entries.filter { only == null || it.name.equals(only, ignoreCase = true) }) {
         val visual = VisualBuffer()
         val song = DemoSong(rate)
         val scene = ImageComposeScene(1280, 720, Density(1f)) {
-            Box(Modifier.fillMaxSize().background(Color(0xFF05060C))) { Visualizer(visual, style, Modifier.fillMaxSize()) }
+            CompositionLocalProvider(LocalShaderEffects provides shaders) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF05060C))) { Visualizer(visual, style, Modifier.fillMaxSize()) }
+            }
         }
         val start = System.nanoTime()
         var fed = 0L

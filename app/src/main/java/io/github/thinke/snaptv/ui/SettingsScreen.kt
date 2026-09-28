@@ -218,7 +218,7 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                     selected = false,
                     onClick = { prefs.update { it.copy(visualStyle = it.visualStyle + 1) } },
                     headlineContent = { Text("Visualizer") },
-                    trailingContent = { Text(VisualStyle.of(settings.visualStyle).label) },
+                    trailingContent = { Text(visualStyleOf(settings.visualStyle).label) },
                 )
             }
             item {

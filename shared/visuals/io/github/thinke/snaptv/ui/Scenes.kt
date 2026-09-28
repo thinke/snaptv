@@ -115,6 +115,37 @@ internal class Scene(private val bands: Int) {
         }
     }
 
+    private var travel = 0f
+
+    /** The numbers a GPU style needs this frame. */
+    fun fillShaderInputs(inputs: ShaderInputs, s: Spectrum, time: Float, dt: Float) {
+        val per = bands / ShaderInputs.BANDS
+        for (b in 0 until ShaderInputs.BANDS) {
+            var sum = 0f
+            for (i in 0 until per) sum += s.levels[b * per + i]
+            inputs.bands[b] = sum / per
+        }
+        // Flying speed follows the music; integrated, so a change of speed never jumps.
+        travel += dt * (0.25f + 0.9f * s.loudness + 1.4f * beat)
+        // Everything repeats every 20 units, so wrapping there is seamless and keeps it exact.
+        if (travel >= TRAVEL_WRAP) travel -= TRAVEL_WRAP
+        inputs.ringPhase = (travel * 3f) % 1f
+        inputs.ribPhase = (travel * 0.15f) % 1f
+        inputs.huePhase = (travel * 0.05f) % 1f
+        inputs.time = time
+        inputs.bass = s.bass
+        inputs.loudness = s.loudness
+        inputs.beat = beat
+        inputs.hue = ((170f + time * 4f) % 360f) / 360f
+        inputs.swayX = 0.06f * sin(time * 0.31f)
+        inputs.swayY = 0.06f * cos(time * 0.23f)
+        // The flash: the opposite hue, pale, as strong as the beat.
+        val flash = Color.hsv(((inputs.hue + 0.5f) % 1f) * 360f, 0.4f, 1f)
+        inputs.flash[0] = flash.red * beat * 0.8f
+        inputs.flash[1] = flash.green * beat * 0.8f
+        inputs.flash[2] = flash.blue * beat * 0.8f
+    }
+
     private fun addRing(s: Spectrum) {
         if (rings == MAX_RINGS) return
         ringRadius[rings] = 0f
@@ -139,6 +170,7 @@ internal class Scene(private val bands: Int) {
         const val ROW_SECONDS = 1f / 24
         const val MAX_RINGS = 16
         const val STARS = 220
+        const val TRAVEL_WRAP = 20f
     }
 }
 
