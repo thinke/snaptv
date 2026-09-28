@@ -227,7 +227,7 @@ fun SettingsScreen(player: Player, prefs: Prefs, onBack: () -> Unit) {
                 }
             }
             item {
-                Toggle("Keep screen on while music plays", "The screensaver still starts when nothing is playing.", settings.keepScreenOn) {
+                Toggle("Keep screen on while SnapTV is open", "No screensaver over SnapTV, music or not. Leaving the app lets the TV rest.", settings.keepScreenOn) {
                     prefs.update { s -> s.copy(keepScreenOn = it) }
                 }
             }

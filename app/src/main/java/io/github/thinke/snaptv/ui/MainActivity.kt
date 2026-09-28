@@ -19,8 +19,8 @@ import io.github.thinke.snaptv.PlaybackService
 import io.github.thinke.snaptv.UpdateState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.thinke.snaptv.app
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -63,11 +63,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Keep the screen on only while there is sound, so the screensaver (and OLED panels)
-        // still get their rest when the house is quiet.
+        // Keep the screen on while SnapTV is open, music or not (as on the desktop). The flag
+        // only holds while this window is visible, so leaving the app lets the TV rest.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                combine(player.state, prefs.settings) { s, p -> p.keepScreenOn && s.audible }
+                prefs.settings.map { it.keepScreenOn }
                     .distinctUntilChanged()
                     .collect { on ->
                         if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
