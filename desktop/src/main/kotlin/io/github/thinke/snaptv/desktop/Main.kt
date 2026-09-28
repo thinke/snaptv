@@ -144,8 +144,7 @@ fun main(args: Array<String>) {
         val settings by prefs.settings.collectAsState()
         val screens = remember { GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds } }
         // The chosen monitor, or MONITOR_ALL: the same picture full screen on every monitor.
-        val monitor = if (settings.monitor == MONITOR_ALL && screens.size > 1) MONITOR_ALL
-            else (if (settings.monitor < 0) (if (screens.size > 1) 1 else 0) else settings.monitor).coerceIn(0, screens.size - 1)
+        val monitor = effectiveMonitor(settings.monitor, screens.size)
         val targets = if (monitor == MONITOR_ALL) screens.indices.toList() else listOf(monitor)
         var settingsOpen by remember { mutableStateOf("--settings" in args) }
         var pokes by remember { mutableIntStateOf(0) }
@@ -234,7 +233,8 @@ fun main(args: Array<String>) {
                             Key.DirectionUp -> session.changeVolume(5)
                             Key.DirectionDown -> session.changeVolume(-5)
                             Key.S, Key.Enter -> settingsOpen = true
-                            Key.M -> prefs.update { it.copy(monitor = nextMonitor(monitor, screens.size)) }
+                            // From the setting as it is now: this handler outlives changes of it.
+                            Key.M -> prefs.update { it.copy(monitor = nextMonitor(effectiveMonitor(it.monitor, screens.size), screens.size)) }
                             Key.F11 -> prefs.update { it.copy(fullscreen = !it.fullscreen) }
                             Key.Escape -> prefs.update { it.copy(fullscreen = false) }
                             else -> return@Window false
@@ -276,6 +276,11 @@ fun main(args: Array<String>) {
 
 /** Saved monitor value for "all screens": the same visualizer full screen on each. */
 internal const val MONITOR_ALL = -2
+
+/** The monitor a saved value means: -1 is automatic (the second screen if there is one). */
+internal fun effectiveMonitor(saved: Int, count: Int): Int =
+    if (saved == MONITOR_ALL && count > 1) MONITOR_ALL
+    else (if (saved < 0) (if (count > 1) 1 else 0) else saved).coerceIn(0, count - 1)
 
 /** M and Settings → Next monitor: 1, 2, …, then all screens (with more than one), then 1 again. */
 internal fun nextMonitor(current: Int, count: Int): Int = when {
