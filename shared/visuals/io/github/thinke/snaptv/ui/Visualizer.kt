@@ -69,7 +69,9 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
                 if (visual.window(System.nanoTime() / 1000, samples)) spectrum.update(samples, visual.sampleRate, dt)
                 else spectrum.decay(dt)
                 scene.step(spectrum, samples, visual.sampleRate, dt)
-                if (style.gpu) scene.fillShaderInputs(inputs, spectrum, t / 1e9f, dt)
+                // Every frame whatever the style: this loop outlives style changes, so checking
+                // the style here would see the one it started with.
+                scene.fillShaderInputs(inputs, spectrum, t / 1e9f, dt)
                 frame.longValue = t
             }
         }
