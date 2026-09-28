@@ -173,8 +173,8 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
                 OutlinedButton(onClick = { prefs.update { it.copy(visualStyle = it.visualStyle + 1) } }) { Text("Next style") }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Monitor: ${monitor + 1} of $monitors", color = Color.White, modifier = Modifier.width(240.dp))
-                OutlinedButton(enabled = monitors > 1, onClick = { prefs.update { it.copy(monitor = (monitor + 1) % monitors) } }) { Text("Next monitor") }
+                Text(if (monitor == MONITOR_ALL) "Monitor: all $monitors screens" else "Monitor: ${monitor + 1} of $monitors", color = Color.White, modifier = Modifier.width(240.dp))
+                OutlinedButton(enabled = monitors > 1, onClick = { prefs.update { it.copy(monitor = nextMonitor(monitor, monitors)) } }) { Text("Next monitor") }
             }
             Toggle("Full screen", settings.fullscreen) { v -> prefs.update { it.copy(fullscreen = v) } }
             Toggle("Show sync statistics", settings.showStats) { v -> prefs.update { it.copy(showStats = v) } }

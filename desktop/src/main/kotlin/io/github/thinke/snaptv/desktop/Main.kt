@@ -17,6 +17,7 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.darkColors
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -68,7 +69,8 @@ import javax.jmdns.JmDNS
  *
  *   snaptv-desktop [--server host] [--monitor N] [--windowed] [--tray] [--settings]
  *
- * Keys: ← → style · ↑ ↓ volume · S or Enter settings · M next monitor · F11 full screen · Esc back.
+ * Keys: ← → style · ↑ ↓ volume · S or Enter settings · M next monitor (then all screens) · F11
+ * full screen · Esc back.
  * Closing the window only hides it: SnapTV keeps playing from the system tray, and quits from the
  * tray icon's menu (left or right click).
  */
@@ -138,7 +140,10 @@ fun main(args: Array<String>) {
         val state by session.state.collectAsState()
         val settings by prefs.settings.collectAsState()
         val screens = remember { GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { it.defaultConfiguration.bounds } }
-        val monitor = (if (settings.monitor < 0) (if (screens.size > 1) 1 else 0) else settings.monitor).coerceIn(0, screens.size - 1)
+        // The chosen monitor, or MONITOR_ALL: the same picture full screen on every monitor.
+        val monitor = if (settings.monitor == MONITOR_ALL && screens.size > 1) MONITOR_ALL
+            else (if (settings.monitor < 0) (if (screens.size > 1) 1 else 0) else settings.monitor).coerceIn(0, screens.size - 1)
+        val targets = if (monitor == MONITOR_ALL) screens.indices.toList() else listOf(monitor)
         var settingsOpen by remember { mutableStateOf("--settings" in args) }
         var pokes by remember { mutableIntStateOf(0) }
         // Shown unless started with --tray; closing hides to the tray and keeps playing.
@@ -192,19 +197,20 @@ fun main(args: Array<String>) {
             )
         }
 
-        val window = rememberWindowState(size = DpSize(1280.dp, 720.dp))
-        // Move to the chosen monitor first, then go full screen there.
-        LaunchedEffect(monitor, settings.fullscreen) {
-            val b = screens[monitor]
-            window.placement = WindowPlacement.Floating
-            window.position = WindowPosition(b.x.dp + 40.dp, b.y.dp + 40.dp)
-            delay(150)
-            if (settings.fullscreen) window.placement = WindowPlacement.Fullscreen
-        }
-
-        // Hidden to the tray means gone: disposing the window frees its Skia surfaces and GPU
-        // context (most of the idle memory); size and position live in `window` above.
-        if (visible) {
+        // Hidden to the tray means gone: disposing a window frees its Skia surfaces and GPU
+        // context (most of the idle memory). One window per target monitor; settings and the
+        // update prompt open on the first, the visualizer shows on all.
+        if (visible) for (screen in targets) key(screen) {
+            val primary = screen == targets.first()
+            val window = rememberWindowState(size = DpSize(1280.dp, 720.dp))
+            // Move to its monitor first, then go full screen there.
+            LaunchedEffect(screen, settings.fullscreen) {
+                val b = screens[screen]
+                window.placement = WindowPlacement.Floating
+                window.position = WindowPosition(b.x.dp + 40.dp, b.y.dp + 40.dp)
+                delay(150)
+                if (settings.fullscreen) window.placement = WindowPlacement.Fullscreen
+            }
             Window(
                 onCloseRequest = { visible = false },
                 state = window,
@@ -221,7 +227,7 @@ fun main(args: Array<String>) {
                             Key.DirectionUp -> session.changeVolume(5)
                             Key.DirectionDown -> session.changeVolume(-5)
                             Key.S, Key.Enter -> settingsOpen = true
-                            Key.M -> prefs.update { it.copy(monitor = (monitor + 1) % screens.size) }
+                            Key.M -> prefs.update { it.copy(monitor = nextMonitor(monitor, screens.size)) }
                             Key.F11 -> prefs.update { it.copy(fullscreen = !it.fullscreen) }
                             Key.Escape -> prefs.update { it.copy(fullscreen = false) }
                             else -> return@Window false
@@ -233,14 +239,14 @@ fun main(args: Array<String>) {
             ) {
                 MaterialTheme(colors = darkColors(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
                   CompositionLocalProvider(LocalShaderEffects provides shaderEffects) {
-                    if (settingsOpen) {
+                    if (settingsOpen && primary) {
                         SettingsPanel(session, updater, screens.size, monitor, onClose = { settingsOpen = false })
                     } else {
                         Box {
                             NowPlaying(session, state, visualStyleOf(settings.visualStyle), settings.showStats, pokes, monitor, screens.size, if (sending) sourceState else null) { settingsOpen = true }
                             val offered = (update as? UpdateState.Available)?.release
                             val busy = update is UpdateState.Downloading || (update is UpdateState.Failed && (update as UpdateState.Failed).release != null)
-                            if (!updateDismissed && ((offered != null && !updater.isSkipped(offered)) || busy)) {
+                            if (primary && !updateDismissed && ((offered != null && !updater.isSkipped(offered)) || busy)) {
                                 UpdatePrompt(updater, update, onClose = { updateDismissed = true })
                             }
                         }
@@ -251,6 +257,20 @@ fun main(args: Array<String>) {
         }
     }
 }
+
+/** Saved monitor value for "all screens": the same visualizer full screen on each. */
+internal const val MONITOR_ALL = -2
+
+/** M and Settings → Next monitor: 1, 2, …, then all screens (with more than one), then 1 again. */
+internal fun nextMonitor(current: Int, count: Int): Int = when {
+    current == MONITOR_ALL -> 0
+    current + 1 < count -> current + 1
+    count > 1 -> MONITOR_ALL
+    else -> 0
+}
+
+/** "monitor 2/2", or "all screens". */
+internal fun monitorLabel(monitor: Int, count: Int) = if (monitor == MONITOR_ALL) "all $count screens" else "monitor ${monitor + 1}/$count"
 
 @Composable
 private fun NowPlaying(session: SnapSession, s: PlayerState, style: VisualStyle, stats: Boolean, pokes: Int, monitor: Int, monitors: Int, sending: SourceState?, openSettings: () -> Unit) {
@@ -280,7 +300,7 @@ private fun NowPlaying(session: SnapSession, s: PlayerState, style: VisualStyle,
                 Row(Modifier.align(Alignment.BottomStart).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Hint("← →  ${style.label}")
                     Hint("↑ ↓  volume ${SnapSession.volumeLabel(s.server)}")
-                    Hint("M  monitor ${monitor + 1}/$monitors  ·  F11  full screen")
+                    Hint("M  ${monitorLabel(monitor, monitors)}  ·  F11  full screen")
                     Hint("S / click  settings")
                 }
             }

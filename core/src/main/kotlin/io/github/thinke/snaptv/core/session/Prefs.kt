@@ -31,7 +31,7 @@ data class AppSettings(
     val updatePrerelease: Boolean = false,
     /** Decoder choice per codec, "flac=kotlin;opus=ffmpeg" (Settings → Decoders); unset = default. */
     val decoders: String = "",
-    /** Desktop: which monitor to fill, and whether full screen. */
+    /** Desktop: which monitor to fill (-1 automatic, -2 all screens), and whether full screen. */
     val monitor: Int = -1,
     val fullscreen: Boolean = true,
     /** Desktop (Linux) only: "room" plays the house audio; "source" sends this computer's audio. */

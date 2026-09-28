@@ -40,7 +40,7 @@ what is playing instead of a blank menu.
 
 ## SnapTV Desktop (Linux)
 
-The same room and visualizers on a Linux desktop, full screen on the monitor you choose. Download
+The same room and visualizers on a Linux desktop, full screen on the monitor you choose, or the same picture on every screen. Download
 `SnapTV-Desktop-<version>-x86_64.AppImage` from Releases, `chmod +x` it and run it. It plays
 through PipeWire/PulseAudio and finds snapserver by itself (or `--server HOST`). Keys: ← → style,
 ↑ ↓ volume, S settings, M next monitor, F11 full screen, Esc leave full screen. Closing the window

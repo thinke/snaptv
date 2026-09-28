@@ -41,7 +41,7 @@ table below with every such change.
 | Screensaver (DreamService) | ✅ | n/a | Android only |
 | Update check from GitHub releases (on open + daily, SHA-256 checked, skip/pre-releases, what's new since the installed version) | ✅ PackageInstaller | ✅ replaces its AppImage and restarts | `core/update/Releases`; the AppImage also carries zsync update info for AppImageUpdate/Gear Lever |
 | Remote / touch / mouse / keyboard input | ✅ D-pad, touch, mouse | ✅ keyboard, mouse | |
-| Multi-monitor full screen | n/a | ✅ | desktop only |
+| Multi-monitor full screen: one chosen monitor, or the same picture on all screens | n/a | ✅ | desktop only; M cycles 1, 2, …, all |
 | Background playback | ✅ foreground service | ✅ system tray (KDE StatusNotifierItem, symbolic icon; XEmbed fallback) | closing only hides the window; the tray icon's menu (left or right click) shows it or quits |
 | Start at boot / login | ✅ (not on Android 15+) | ❌ | `--tray` is ready for an autostart entry (the dev laptop uses `~/.config/autostart`) |
 | Send mode: be the source (PipeWire output → snapserver tcp input, paced by the monotonic clock) | n/a | ✅ | Linux only by design; `SourceMode.kt`, one mode at a time (`desktopMode`) |
