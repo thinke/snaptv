@@ -209,18 +209,18 @@ fun main(args: Array<String>) {
         // update prompt open on the first, the visualizer shows on all.
         if (visible) for (screen in targets) key(screen) {
             val primary = screen == targets.first()
-            val window = rememberWindowState(size = DpSize(1280.dp, 720.dp))
+            val windowState = rememberWindowState(size = DpSize(1280.dp, 720.dp))
             // Move to its monitor first, then go full screen there.
             LaunchedEffect(screen, settings.fullscreen) {
                 val b = screens[screen]
-                window.placement = WindowPlacement.Floating
-                window.position = WindowPosition(b.x.dp + 40.dp, b.y.dp + 40.dp)
+                windowState.placement = WindowPlacement.Floating
+                windowState.position = WindowPosition(b.x.dp + 40.dp, b.y.dp + 40.dp)
                 delay(150)
-                if (settings.fullscreen) window.placement = WindowPlacement.Fullscreen
+                if (settings.fullscreen) windowState.placement = WindowPlacement.Fullscreen
             }
             Window(
                 onCloseRequest = { visible = false },
-                state = window,
+                state = windowState,
                 title = "SnapTV",
                 icon = icon,
                 onPreviewKeyEvent = { e ->
@@ -244,6 +244,15 @@ fun main(args: Array<String>) {
                     }
                 },
             ) {
+                // When windows come and go (M: one screen, the other, all), the one that had the
+                // keyboard may have closed: the first takes focus, or keys would go nowhere.
+                LaunchedEffect(targets) {
+                    if (primary) {
+                        delay(300) // after the window is placed
+                        window.toFront()
+                        window.requestFocus()
+                    }
+                }
                 MaterialTheme(colors = darkColors(primary = Color(0xFF6EE7D8), secondary = Color(0xFFC084FC))) {
                   CompositionLocalProvider(LocalShaderEffects provides shaderEffects) {
                     if (settingsOpen && primary) {
