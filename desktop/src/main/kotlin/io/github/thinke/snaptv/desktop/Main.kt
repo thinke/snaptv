@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.darkColors
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
@@ -57,6 +59,8 @@ import io.github.thinke.snaptv.ui.LocalShaderEffects
 import io.github.thinke.snaptv.ui.VisualStyle
 import io.github.thinke.snaptv.ui.visualStyleOf
 import io.github.thinke.snaptv.ui.Visualizer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import java.awt.GraphicsEnvironment
 import java.net.Inet4Address
@@ -133,8 +137,9 @@ fun main(args: Array<String>) {
     val updater = DesktopUpdater(prefs, args) { relaunch -> restart(relaunch) }
     updater.startChecking()
 
-    // GPU visualizer styles (Skia runtime shaders); the TV app draws only the Canvas ones so far.
+    // GPU visualizer styles (Skia runtime shaders).
     val shaderEffects = SkiaShaderEffects()
+    val inhibitor = ScreenInhibitor()
 
     application {
         val state by session.state.collectAsState()
@@ -181,6 +186,12 @@ fun main(args: Array<String>) {
         val nativeTray = remember { notifier.start() }
         val statusLine = if (sending) sourceStatus(sourceState) else status(state)
         LaunchedEffect(visible, statusLine) { notifier.update(visible, statusLine) }
+        // Keep the screensaver and screen lock away while SnapTV is on screen, music or not;
+        // never from the tray or minimized.
+        val minimized = remember { mutableStateListOf<Int>() }
+        val allMinimized = targets.all { it in minimized }
+        val holdScreen = visible && !allMinimized && settings.keepScreenOn
+        LaunchedEffect(holdScreen) { withContext(Dispatchers.IO) { inhibitor.set(holdScreen) } }
         // After hiding, give the freed window memory back instead of waiting for the next GC.
         LaunchedEffect(visible) { if (!visible) { delay(2000); releaseMemory() } }
         if (!nativeTray) {
@@ -203,6 +214,10 @@ fun main(args: Array<String>) {
         if (visible) for (screen in targets) key(screen) {
             val primary = screen == targets.first()
             val window = rememberWindowState(size = DpSize(1280.dp, 720.dp))
+            DisposableEffect(window.isMinimized) {
+                if (window.isMinimized) minimized += screen else minimized -= screen
+                onDispose { minimized -= screen }
+            }
             // Move to its monitor first, then go full screen there.
             LaunchedEffect(screen, settings.fullscreen) {
                 val b = screens[screen]

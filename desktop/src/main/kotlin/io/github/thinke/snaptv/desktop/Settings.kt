@@ -177,6 +177,7 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
                 OutlinedButton(enabled = monitors > 1, onClick = { prefs.update { it.copy(monitor = nextMonitor(monitor, monitors)) } }) { Text("Next monitor") }
             }
             Toggle("Full screen", settings.fullscreen) { v -> prefs.update { it.copy(fullscreen = v) } }
+            Toggle("Keep the screensaver and screen lock away while SnapTV is on screen", settings.keepScreenOn) { v -> prefs.update { it.copy(keepScreenOn = v) } }
             Toggle("Show sync statistics", settings.showStats) { v -> prefs.update { it.copy(showStats = v) } }
         }
 
