@@ -55,9 +55,15 @@ class ShaderInputs {
     var swayX = 0f
     var swayY = 0f
     val flash = FloatArray(3)
+    /** The Spectrum backdrop's glow colour, as strong as the bass. */
+    val glow = FloatArray(3)
+    /** The Spectrum style's bars, 0..1, lows first, and their slowly falling peak markers. */
+    val bars = FloatArray(BARS)
+    val peaks = FloatArray(BARS)
 
     companion object {
         const val BANDS = 24
+        const val BARS = 48
     }
 }
 
@@ -79,6 +85,7 @@ uniform float beat;
 uniform float hue;
 uniform vec2 sway;
 uniform vec3 flash;
+uniform vec3 glow;
 """
 
     /**
@@ -97,16 +104,95 @@ float band(float x) {
 """
 
     /**
-     * Flying down a tunnel of glowing rings and ribs. The walls around you light up with the
-     * spectrum (lows at the top and bottom, highs at the sides), the rings thicken with the
-     * bass, and each beat flashes at the far end. `vec3 tunnel(vec2 p)`, p in pixels.
+     * `float bar(float i)` and `float peak(float i)`: bar i's level and peak marker, 0..1. A loop
+     * where uniform arrays can't be indexed by a computed value (Skia); OpenGL ES uses a 48×1
+     * texture instead, see its wrapper.
      */
-    const val TUNNEL = """
+    const val BAR_LOOP = """
+uniform float bars[48];
+uniform float peaks[48];
+float bar(float i) {
+    float v = 0.0;
+    for (int k = 0; k < 48; k++) if (float(k) == i) v = bars[k];
+    return v;
+}
+float peak(float i) {
+    float v = 0.0;
+    for (int k = 0; k < 48; k++) if (float(k) == i) v = peaks[k];
+    return v;
+}
+"""
+
+    const val HSV = """
 vec3 hsv(float h, float s, float v) {
     vec3 k = clamp(abs(fract(h + vec3(0.0, 2.0, 1.0) / 3.0) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
     return v * mix(vec3(1.0), k, s);
 }
+"""
 
+    /**
+     * The Spectrum style as a shader, drawn like the Canvas version: a glow that
+     * swells with the bass, 48 rounded bars fading towards the floor, their reflections and
+     * peak markers. Each pixel only looks at the one bar above or below it, so it costs about
+     * the same at any number of bars. `vec3 spectrumBars(vec2 p)`, p in pixels.
+     */
+    const val BARS = HSV + """
+// How much of the pixel at p the box lo..hi covers, so edges are anti-aliased.
+float box(vec2 p, vec2 lo, vec2 hi) {
+    vec2 c = clamp(min(p - lo, hi - p) + 0.5, 0.0, 1.0);
+    return c.x * c.y;
+}
+
+vec3 spectrumBars(vec2 p) {
+    float w = resolution.x;
+    float h = resolution.y;
+
+    // The backdrop's glow, as the Canvas gradient draws it: colour and alpha both fade out.
+    vec2 centre = vec2(0.5 * w, 0.62 * h);
+    float f = 1.0 - clamp(length(p - centre) / (max(w, h) * (0.45 + 0.2 * bass)), 0.0, 1.0);
+    vec3 c = glow * f * f;
+
+    float slot = w * 0.9 / 48.0;
+    float barW = slot * 0.72;
+    float left = w * 0.05;
+    float baseline = h * 0.70;
+    float maxH = h * 0.55;
+    float i = floor((p.x - left) / slot);
+    if (i < 0.0 || i > 47.0) return c;
+    float x = left + i * slot + (slot - barW) * 0.5;
+    // Most of the screen is backdrop: leave it before the per-bar work, a big saving on TV GPUs.
+    if (p.x < x - 1.0 || p.x > x + barW + 1.0) return c;
+    float bh = max(2.0, bar(i) * maxH);
+    float py = baseline - max(2.0, peak(i) * maxH) - 8.0;
+    if (p.y < py - 1.0 || p.y > baseline + 7.0 + bh * 0.4) return c;
+    vec3 color = hsv(hue + i / 47.0 * 0.41666667, 0.75, 1.0);
+
+    // The bar: a rounded box, opaque at the top and 55% at the floor.
+    float r = min(barW / 3.0, 0.5 * min(barW, bh));
+    vec2 hs = vec2(0.5 * barW, 0.5 * bh);
+    vec2 q = abs(p - vec2(x + hs.x, baseline - hs.y)) - hs + r;
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    float t = clamp((p.y - (baseline - bh)) / bh, 0.0, 1.0);
+    c = mix(c, color, clamp(0.5 - d, 0.0, 1.0) * mix(1.0, 0.55, t));
+
+    // Its reflection on the floor: colour and alpha fade out downwards.
+    float top = baseline + 6.0;
+    float rh = bh * 0.4;
+    float u = 1.0 - clamp((p.y - top) / rh, 0.0, 1.0);
+    float a = box(p, vec2(x, top), vec2(x + barW, top + rh)) * 0.22 * u;
+    c = c * (1.0 - a) + color * u * a;
+
+    c = mix(c, color, box(p, vec2(x, py), vec2(x + barW, py + 4.0)) * 0.9);
+    return c;
+}
+"""
+
+    /**
+     * Flying down a tunnel of glowing rings and ribs. The walls around you light up with the
+     * spectrum (lows at the top and bottom, highs at the sides), the rings thicken with the
+     * bass, and each beat flashes at the far end. `vec3 tunnel(vec2 p)`, p in pixels.
+     */
+    const val TUNNEL = HSV + """
 vec3 tunnel(vec2 p) {
     vec2 uv = (p - 0.5 * resolution) / resolution.y;
     // The tunnel sways slowly, so it feels like flying rather than a static pipe.

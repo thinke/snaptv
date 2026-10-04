@@ -24,6 +24,9 @@ class SkiaShaderEffects : ShaderEffects {
     private val tunnel: RuntimeShaderBuilder by lazy {
         RuntimeShaderBuilder(RuntimeEffect.makeForShader(ShaderSource.UNIFORMS + ShaderSource.BAND_LOOP + ShaderSource.TUNNEL + MAIN.format("tunnel")))
     }
+    private val bars: RuntimeShaderBuilder by lazy {
+        RuntimeShaderBuilder(RuntimeEffect.makeForShader(ShaderSource.UNIFORMS + ShaderSource.BAND_LOOP + ShaderSource.BAR_LOOP + ShaderSource.BARS + MAIN.format("spectrumBars")))
+    }
 
     @Composable
     override fun Effect(style: VisualStyle, inputs: ShaderInputs, frame: State<Long>, modifier: Modifier) {
@@ -36,6 +39,10 @@ class SkiaShaderEffects : ShaderEffects {
     private fun draw(scope: DrawScope, style: VisualStyle, inputs: ShaderInputs) {
         val b = when (style) {
             VisualStyle.Tunnel -> tunnel
+            VisualStyle.Bars -> bars.apply {
+                uniform("bars", inputs.bars)
+                uniform("peaks", inputs.peaks)
+            }
             else -> return
         }
         b.uniform("resolution", scope.size.width, scope.size.height)
@@ -49,6 +56,7 @@ class SkiaShaderEffects : ShaderEffects {
         b.uniform("hue", inputs.hue)
         b.uniform("sway", inputs.swayX, inputs.swayY)
         b.uniform("flash", inputs.flash[0], inputs.flash[1], inputs.flash[2])
+        b.uniform("glow", inputs.glow[0], inputs.glow[1], inputs.glow[2])
         b.uniform("bands", inputs.bands)
         scope.drawRect(ShaderBrush(b.makeShader().asComposeShader()), Offset.Zero, scope.size)
     }

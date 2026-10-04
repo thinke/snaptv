@@ -25,8 +25,12 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-enum class VisualStyle(val label: String, val gpu: Boolean = false) {
-    Bars("Spectrum"),
+/**
+ * [gpu]: only drawn as a shader, so offered only where [LocalShaderEffects] runs them. [shader]: drawn
+ * as a shader where it can be, on the Canvas elsewhere.
+ */
+enum class VisualStyle(val label: String, val gpu: Boolean = false, val shader: Boolean = gpu) {
+    Bars("Spectrum", shader = true),
     Halo("Halo"),
     Scope("Oscilloscope"),
     Ridges("Ridges"),
@@ -77,7 +81,7 @@ fun Visualizer(visual: VisualBuffer, style: VisualStyle, modifier: Modifier = Mo
         }
     }
 
-    if (style.gpu && shaders != null) {
+    if (style.shader && shaders != null) {
         shaders.Effect(style, inputs, frame, modifier)
         return
     }

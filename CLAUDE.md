@@ -31,7 +31,7 @@ table below with every such change.
 | Transports: tcp, ws, wss; auth; accept-any-certificate | ✅ | ✅ | `core`; both Settings UIs |
 | Server discovery (mDNS) | ✅ NSD | ✅ JmDNS | |
 | Visualizers: Spectrum, Halo, Oscilloscope, Ridges, Starfield, Pulse, Liquid | ✅ | ✅ | `shared/visuals` |
-| GPU visualizer styles (fragment shaders): Tunnel | ✅ OpenGL ES 2 view (`GlesShaders.kt`) | ✅ Skia runtime shader (`SkiaShaders.kt`) | effect code shared in `shared/visuals/Shaders.kt`; each platform adds uniforms, `band()` and `main()` |
+| GPU visualizer styles (fragment shaders): Tunnel, and Spectrum where shaders run (Canvas otherwise) | ✅ OpenGL ES 2 view (`GlesShaders.kt`) | ✅ Skia runtime shader (`SkiaShaders.kt`) | effect code shared in `shared/visuals/Shaders.kt`; each platform adds uniforms, `band()` and `main()` |
 | Room/track names, source switching, rename (JSON-RPC) | ✅ | ✅ | `SnapSession` |
 | Audio delay stored as server latency, adjustable (−50/−10/+10/+50, reset) | ✅ | ✅ | `SnapSession` |
 | Picture sync test / microphone measurement | ✅ | ❌ | |
@@ -58,7 +58,11 @@ time new styles on the TV with the bench build (`dumpsys gfxinfo io.github.think
 GPU styles (shaders) on the TV's PowerVR BXE-4-32 (~25 GFLOPS): drawn at 2/3 size and scaled
 up, 16-bit maths (`mediump`), so keep every number small: pass anything that grows (distance
 flown) as a 0..1 phase from the CPU, and work out per-frame constants there, not per pixel.
-Spectrum levels are a 24x1 texture on GL (one lookup) rather than a loop. Their frame rate is
+Spectrum levels are a 24x1 texture on GL (one lookup) rather than a loop.
+The Spectrum style is a shader too (`VisualStyle.shader`): as Canvas drawing it built two
+gradient shaders per bar per frame, a full core and ~1 MB/s of garbage on the Chromecast with
+Google TV. It runs at full size with `highp` (sharp edges, pixel maths), its bars and peaks in a
+48x1 RGBA texture at 16 bits each, and leaves backdrop pixels early: 80 fps uncapped there. Their frame rate is
 logged by the bench build (`adb logcat -s SnapTV.GL`); gfxinfo doesn't see GL surfaces.
 
 ## Building

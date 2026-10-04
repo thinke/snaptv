@@ -125,6 +125,8 @@ internal class Scene(private val bands: Int) {
             for (i in 0 until per) sum += s.levels[b * per + i]
             inputs.bands[b] = sum / per
         }
+        s.levels.copyInto(inputs.bars, endIndex = min(bands, ShaderInputs.BARS))
+        s.peaks.copyInto(inputs.peaks, endIndex = min(bands, ShaderInputs.BARS))
         // Flying speed follows the music; integrated, so a change of speed never jumps.
         travel += dt * (0.25f + 0.9f * s.loudness + 1.4f * beat)
         // Everything repeats every 20 units, so wrapping there is seamless and keeps it exact.
@@ -144,6 +146,11 @@ internal class Scene(private val bands: Int) {
         inputs.flash[0] = flash.red * beat * 0.8f
         inputs.flash[1] = flash.green * beat * 0.8f
         inputs.flash[2] = flash.blue * beat * 0.8f
+        val glow = Color.hsv(((inputs.hue + 0.125f) % 1f) * 360f, 0.6f, 0.5f)
+        val strength = 0.10f + 0.35f * s.bass
+        inputs.glow[0] = glow.red * strength
+        inputs.glow[1] = glow.green * strength
+        inputs.glow[2] = glow.blue * strength
     }
 
     private fun addRing(s: Spectrum) {
