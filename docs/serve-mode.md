@@ -20,7 +20,7 @@ client side, so writing it ourselves is the smaller job.
   repeating frames) goes away.
 - **Time sync**: the server only answers each Time message with its own clock.
 - **Codec**: PCM needs no encoder, only the 44-byte RIFF header (built in `AuthTest.kt`).
-  All clients, the WT3020 too, ran PCM before FLAC.
+  All our clients ran PCM before FLAC.
 - **Transport**: `TcpTransport` wraps a `Socket`; the server adds a `ServerSocket`. WebSocket later.
 - **mDNS**: JmDNS is in the desktop app; announce `_snapcast._tcp` as well as browse it.
 - **Tests**: `SnapEngine` is a client, so `:core:test` can run server and client on localhost.
@@ -34,8 +34,9 @@ client side, so writing it ourselves is the smaller job.
 2. **Remember clients**: name, volume and latency per client id, kept across restarts
    (java.util.prefs on desktop).
 3. **ServerSettings per client**: buffer, latency, volume, mute; on connect and on every change.
-4. **Real snapclient compatibility**: the WT3020 runs snapclient, so field names and message
-   order must match snapserver. Test against it, not only against `SnapEngine`.
+4. **Real snapclient compatibility**: all our rooms run SnapTV now, but other people's may run
+   snapclient, so field names and message order must match snapserver. Test against snapclient
+   too, not only against `SnapEngine`.
 5. **FLAC encoding**: optional. PCM 48000:16:2 is ~1.5 Mbit/s per client, fine on the LAN.
 
 ## Design
@@ -50,4 +51,5 @@ client side, so writing it ourselves is the smaller job.
 ## First step
 
 A minimal `core/server/`: PCM, tcp, time sync, Hello → CodecHeader + ServerSettings, the
-JSON-RPC subset above. Tested against `SnapEngine` in `:core:test`, then a real snapclient.
+JSON-RPC subset above. Tested against `SnapEngine` in `:core:test`, then the SnapTV rooms, then
+a real snapclient.
