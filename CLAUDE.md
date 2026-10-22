@@ -29,7 +29,7 @@ table below with every such change.
 | Codecs: Opus, Ogg Vorbis | ✅ MediaCodec | ❌ | needs native libopus/libvorbis or FFmpeg on desktop |
 | Selectable decoders + on-device decoder self-test | ✅ | ❌ | desktop has only `core` decoders so far |
 | Transports: tcp, ws, wss; auth; accept-any-certificate | ✅ | ✅ | `core`; both Settings UIs |
-| Server discovery (mDNS) | ✅ NSD | ✅ JmDNS | |
+| Server discovery (mDNS); Settings lists the servers found to pick from, or Automatic, or a typed address as the override | ✅ NSD | ✅ JmDNS | `DiscoveredServer` in `core` (takes the announced address on our own network, not a Docker bridge); Automatic searches again once its server has been unreachable for 30 s; on desktop the Send mode uses the same choice |
 | Visualizers: Spectrum, Halo, Oscilloscope, Ridges, Starfield, Pulse, Liquid | ✅ | ✅ | `shared/visuals` |
 | GPU visualizer styles (fragment shaders): Tunnel, and Spectrum where shaders run (Canvas otherwise) | ✅ OpenGL ES 2 view (`GlesShaders.kt`) | ✅ Skia runtime shader (`SkiaShaders.kt`) | effect code shared in `shared/visuals/Shaders.kt`; each platform adds uniforms, `band()` and `main()` |
 | Room/track names, source switching, rename (JSON-RPC) | ✅ | ✅ | `SnapSession` |

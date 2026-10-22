@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -176,26 +177,32 @@ class SnapSession(
             // Reconnect whenever the chosen server, the login or the TLS setting changes, and on
             // a decoder change: the new decoder takes over at the next codec header.
             prefs.settings.map { Endpoint(it.serverHost, it.serverPort, Credentials.of(it.authUser, it.authPassword), it.tlsTrustAll, it.decoders) }
-                .distinctUntilChanged().collect { (host, port, credentials, trustAll) ->
-                    engine.stop()
-                    control.stop()
-                    _state.update { it.copy(authError = null, serverError = null) }
-                    val target = if (host.isNotBlank()) {
-                        try {
-                            ServerAddress.fromStored(host, port)
-                        } catch (e: IllegalArgumentException) {
-                            _state.update { it.copy(connection = ConnectionState.Failed(host, port, e.message ?: "bad server address")) }
-                            null
-                        }
-                    } else {
-                        findServer()
+                .distinctUntilChanged().collectLatest { (host, port, credentials, trustAll) ->
+                    fun disconnect() {
+                        engine.stop()
+                        control.stop()
                     }
-                    if (target != null) {
+                    fun connect(target: ServerAddress) {
                         serverHost = target.host
                         engine.start(target, if (trustAll) TlsOptions(trustAll = true) else TlsOptions.Default, credentials)
                         // The control API is plain JSON-RPC on 1705 whatever transport the audio uses.
                         control.start(target.host)
                         output.start()
+                    }
+                    disconnect()
+                    _state.update { it.copy(authError = null, serverError = null) }
+                    if (host.isNotBlank()) {
+                        try {
+                            connect(ServerAddress.fromStored(host, port))
+                        } catch (e: IllegalArgumentException) {
+                            _state.update { it.copy(connection = ConnectionState.Failed(host, port, e.message ?: "bad server address")) }
+                        }
+                    } else while (true) {
+                        connect(findServer())
+                        // Automatic: a server that stops answering may be gone for good (switched
+                        // off, or another one took over), so look on the network again.
+                        awaitServerLost()
+                        disconnect()
                     }
                 }
         }
@@ -271,7 +278,7 @@ class SnapSession(
     /** Runs [block] on the session's scope (for platform extras that belong to its lifetime). */
     fun launch(block: suspend CoroutineScope.() -> Unit) = scope.launch(Dispatchers.IO, block = block)
 
-    private suspend fun findServer(): ServerAddress? {
+    private suspend fun findServer(): ServerAddress {
         _state.update { it.copy(discovering = true) }
         try {
             while (true) {
@@ -281,6 +288,18 @@ class SnapSession(
             }
         } finally {
             _state.update { it.copy(discovering = false) }
+        }
+    }
+
+    /** Returns once the connection has been down for [SERVER_LOST_MS] in a row. */
+    private suspend fun awaitServerLost() {
+        var downSinceMs = -1L
+        while (true) {
+            val nowMs = System.currentTimeMillis()
+            if (_state.value.connection is ConnectionState.Connected) downSinceMs = -1L
+            else if (downSinceMs < 0) downSinceMs = nowMs
+            else if (nowMs - downSinceMs >= SERVER_LOST_MS) return
+            delay(1000)
         }
     }
 
@@ -302,6 +321,8 @@ class SnapSession(
         const val MAX_DELAY_MS = 2000
         /** Pause between mDNS searches while no server is found. */
         private const val DISCOVERY_RETRY_MS = 10_000L
+        /** With the server on Automatic, how long a found server may stay unreachable before we search again. */
+        const val SERVER_LOST_MS = 30_000L
         private const val AUDIBLE_RMS = 0.001f // about -60 dBFS
         private const val AUDIBLE_HOLD_US = 8_000_000L
 

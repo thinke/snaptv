@@ -6,13 +6,14 @@ import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
+import io.github.thinke.snaptv.core.transport.DiscoveredServer
+import io.github.thinke.snaptv.core.transport.localNetworks
+import io.github.thinke.snaptv.core.transport.reachableAddress
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import java.net.Inet4Address
 import java.util.concurrent.Executors
-
-data class DiscoveredServer(val name: String, val host: String, val port: Int)
 
 /** Browses mDNS for snapservers (`_snapcast._tcp`, advertised by snapserver via avahi). */
 class Discovery(private val context: Context) {
@@ -67,7 +68,9 @@ class Discovery(private val context: Context) {
 
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 val address = if (Build.VERSION.SDK_INT >= 34) {
-                    serviceInfo.hostAddresses.firstOrNull { it is Inet4Address } ?: serviceInfo.hostAddresses.firstOrNull()
+                    // Hosts announce all their addresses (Docker bridges too): one on our network first.
+                    val v4 = serviceInfo.hostAddresses.filterIsInstance<Inet4Address>()
+                    reachableAddress(v4, runCatching { localNetworks() }.getOrDefault(emptyList())) ?: v4.firstOrNull() ?: serviceInfo.hostAddresses.firstOrNull()
                 } else {
                     serviceInfo.host
                 }

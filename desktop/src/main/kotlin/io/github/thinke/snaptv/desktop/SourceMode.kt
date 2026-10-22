@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit
 data class SourceState(
     val running: Boolean = false,
     val status: String = "Stopped",
+    /** Connected to the snapserver and sending. */
+    val connected: Boolean = false,
     val sinkName: String = "",
     /** Audio waiting between capture and network, ms. Stays small if pacing works. */
     val bufferedMs: Int = 0,
@@ -79,7 +81,7 @@ class SourceMode(private val visual: VisualBuffer) {
         sender = null
         loadedModule?.let { runCatching { pactl("unload-module", it) } }
         loadedModule = null
-        _state.update { it.copy(running = false, status = "Stopped") }
+        _state.update { it.copy(running = false, connected = false, status = "Stopped") }
     }
 
     private fun senderLoop(host: String, port: Int, sinkName: String) {
@@ -87,7 +89,7 @@ class SourceMode(private val visual: VisualBuffer) {
         while (running) {
             try {
                 ensureSink(sinkName)
-                _state.update { it.copy(status = "Connecting to $host:$port…", error = null) }
+                _state.update { it.copy(status = "Connecting to $host:$port…", connected = false, error = null) }
                 val s = Socket()
                 socket = s
                 s.tcpNoDelay = true
@@ -96,11 +98,11 @@ class SourceMode(private val visual: VisualBuffer) {
                 synchronized(lock) { head = 0; tail = 0 }
                 // Connected first, then capture: nothing queues up while connecting.
                 capture = Thread({ captureLoop(sinkName) }, "source-capture").apply { isDaemon = true; start() }
-                _state.update { it.copy(status = "Sending to $host:$port") }
+                _state.update { it.copy(status = "Sending to $host:$port", connected = true) }
                 sendPaced(s.getOutputStream())
             } catch (e: Exception) {
                 if (!running) break
-                _state.update { it.copy(status = "Can't send to $host:$port, retrying…", error = e.message ?: e.javaClass.simpleName) }
+                _state.update { it.copy(status = "Can't send to $host:$port, retrying…", connected = false, error = e.message ?: e.javaClass.simpleName) }
             } finally {
                 runCatching { socket?.close() }
                 capture?.let { c -> c.interrupt(); c.join(1000) }

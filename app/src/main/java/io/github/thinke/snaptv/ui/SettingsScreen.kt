@@ -284,7 +284,7 @@ private fun Toggle(title: String, description: String, checked: Boolean, onChang
 }
 
 @Composable
-private fun <T : io.github.thinke.snaptv.DiscoveredServer> ServerPicker(
+private fun <T : io.github.thinke.snaptv.core.transport.DiscoveredServer> ServerPicker(
     servers: List<Pair<String, T>>,
     current: String,
     onAuto: () -> Unit,

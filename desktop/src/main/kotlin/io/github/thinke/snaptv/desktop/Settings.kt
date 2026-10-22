@@ -27,6 +27,7 @@ import androidx.compose.material.LocalContentColor
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -37,7 +38,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.thinke.snaptv.core.session.SnapSession
+import io.github.thinke.snaptv.core.transport.DiscoveredServer
 import io.github.thinke.snaptv.core.transport.ServerAddress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import io.github.thinke.snaptv.ui.VisualStyle
 import io.github.thinke.snaptv.ui.visualStyleOf
 
@@ -93,6 +98,10 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
         }
 
         Section("Server") {
+            // Searched again every 10 s while Settings is open, so servers that come and go show up.
+            val found by produceState(emptyList<DiscoveredServer>()) {
+                while (true) { value = withContext(Dispatchers.IO) { findServers() }; delay(10_000) }
+            }
             var address by remember { mutableStateOf(settings.serverHost) }
             var error by remember { mutableStateOf<String?>(null) }
             fun connect() {
@@ -103,20 +112,28 @@ fun SettingsPanel(session: SnapSession, updater: DesktopUpdater, monitors: Int, 
                     null
                 } catch (e: IllegalArgumentException) { e.message ?: "not a valid address" }
             }
+            fun pick(host: String, port: Int) { address = host; error = null; prefs.update { it.copy(serverHost = host, serverPort = port) } }
             Text(
                 if (settings.serverHost.isBlank()) "Automatic (mDNS)" + (session.serverHost?.let { " · found " + nameAndAddress(session.serverLabel(it), it) } ?: "")
                 else settings.serverHost + if ("://" !in settings.serverHost) ":${settings.serverPort}" else "",
                 color = Color.White.copy(alpha = 0.8f),
             )
+            val auto = settings.serverHost.isBlank()
+            Choice("Automatic: the first snapserver announced on the network", auto) { address = ""; connect() }
+            for (f in found) {
+                // mDNS names are hosts here; the server's own name, once connected, says more.
+                val label = session.serverLabel(f.host).takeIf { it != f.host } ?: f.name
+                Choice("${nameAndAddress(label, f.host)} · port ${f.port}", !auto && settings.serverHost == f.host && settings.serverPort == f.port) { pick(f.host, f.port) }
+            }
+            Text(if (found.isEmpty()) "Looking for snapservers on the network…" else "Found on the network; searched again every 10 s.", color = Color.White.copy(alpha = 0.5f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = address, onValueChange = { address = it.trim() }, singleLine = true,
-                    label = { Text("host, host:port, ws:// or wss:// URL; empty = automatic") },
+                    label = { Text("Or an address: host, host:port, ws:// or wss:// URL") },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { connect() }),
                     modifier = Modifier.width(520.dp),
                 )
                 Button(onClick = { connect() }) { Text("Connect") }
-                OutlinedButton(onClick = { address = ""; connect() }) { Text("Automatic") }
             }
             error?.let { Text(it, color = Color(0xFFFF8A80)) }
             Toggle("Accept any TLS certificate (wss:// with a self-signed certificate)", settings.tlsTrustAll) { v -> prefs.update { it.copy(tlsTrustAll = v) } }
@@ -207,6 +224,12 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     Divider(color = Color.White.copy(alpha = 0.1f))
     Text(title, style = MaterialTheme.typography.h6, color = Color.White)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) { content() }
+}
+
+/** One of the server choices: filled when chosen, outlined otherwise. */
+@Composable
+private fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) Button(onClick = onClick) { Text(label) } else OutlinedButton(onClick = onClick) { Text(label) }
 }
 
 @Composable

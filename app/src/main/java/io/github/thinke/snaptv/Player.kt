@@ -7,8 +7,6 @@ import io.github.thinke.snaptv.core.ClientIdentity
 import io.github.thinke.snaptv.core.ServerSettings
 import io.github.thinke.snaptv.core.session.SnapSession
 import io.github.thinke.snaptv.core.source.ClickTrackSource
-import io.github.thinke.snaptv.core.transport.Scheme
-import io.github.thinke.snaptv.core.transport.ServerAddress
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -34,7 +32,7 @@ class Player(context: Context, private val prefs: Prefs) {
             sink = { AudioOutput(it) },
             discover = {
                 withTimeoutOrNull(10_000) { discovery.servers().first { it.isNotEmpty() } }
-                    ?.first()?.let { ServerAddress(Scheme.TCP, it.host, it.port) }
+                    ?.first()?.address
             },
             log = { android.util.Log.i("SnapTV.Sync", it) },
         )

@@ -51,7 +51,6 @@ import io.github.thinke.snaptv.core.ConnectionState
 import io.github.thinke.snaptv.core.codec.DecoderFactory
 import io.github.thinke.snaptv.core.session.PlayerState
 import io.github.thinke.snaptv.core.session.SnapSession
-import io.github.thinke.snaptv.core.transport.Scheme
 import io.github.thinke.snaptv.core.transport.ServerAddress
 import io.github.thinke.snaptv.ui.LocalShaderEffects
 import io.github.thinke.snaptv.ui.VisualStyle
@@ -64,6 +63,9 @@ import java.awt.GraphicsEnvironment
 import java.net.Inet4Address
 import java.net.InetAddress
 import javax.jmdns.JmDNS
+import io.github.thinke.snaptv.core.transport.DiscoveredServer
+import io.github.thinke.snaptv.core.transport.localNetworks
+import io.github.thinke.snaptv.core.transport.reachableAddress
 
 /**
  * SnapTV Desktop: a Snapcast room with SnapTV's visualizer, full screen on the monitor you
@@ -118,12 +120,24 @@ fun main(args: Array<String>) {
             session.stop()
             Thread({
                 val s = prefs.settings.value
-                var host: String? = null
-                while (host == null && gen == modeGen.get()) {
-                    host = s.serverHost.takeIf { it.isNotBlank() }?.let { runCatching { ServerAddress.fromStored(it, s.serverPort).host }.getOrNull() } ?: discover()?.host
-                    if (host == null) Thread.sleep(DISCOVERY_RETRY_MS)
+                val fixed = s.serverHost.takeIf { it.isNotBlank() }?.let { runCatching { ServerAddress.fromStored(it, s.serverPort).host }.getOrNull() }
+                while (gen == modeGen.get()) {
+                    val host = fixed ?: discover()?.host
+                    if (host == null) { Thread.sleep(DISCOVERY_RETRY_MS); continue }
+                    if (gen != modeGen.get()) break
+                    source.start(host, portOverride ?: s.sourcePort, sinkOverride ?: s.sourceSink)
+                    if (fixed != null) break
+                    // Automatic: once this server has stopped taking the audio for a while, look on
+                    // the network again (as a room does, see SnapSession).
+                    var downSinceMs = -1L
+                    while (gen == modeGen.get()) {
+                        Thread.sleep(1000)
+                        val nowMs = System.currentTimeMillis()
+                        if (source.state.value.connected) downSinceMs = -1L
+                        else if (downSinceMs < 0) downSinceMs = nowMs
+                        else if (nowMs - downSinceMs >= SnapSession.SERVER_LOST_MS) break
+                    }
                 }
-                if (host != null && gen == modeGen.get()) source.start(host, portOverride ?: s.sourcePort, sinkOverride ?: s.sourceSink)
             }, "source-start").apply { isDaemon = true; start() }
         } else {
             source.stop()
@@ -156,11 +170,13 @@ fun main(args: Array<String>) {
         lateinit var notifierRef: StatusNotifier
         val quit = { notifierRef.stop(); source.stop(); session.stop(); exitApplication() }
         val sourceState by source.state.collectAsState()
-        // Re-apply when the mode changes, or the source port/output while sending.
-        val modeKey = Triple(settings.desktopMode, settings.sourcePort, settings.sourceSink)
+        // Re-apply when the mode changes, or the server or source port/output while sending
+        // (a room follows the server setting itself).
+        val modeKey = if (settings.desktopMode == "source") listOf(settings.desktopMode, settings.sourcePort, settings.sourceSink, settings.serverHost, settings.serverPort)
+            else listOf(settings.desktopMode)
         var applied by remember { mutableStateOf(modeKey) }
         LaunchedEffect(modeKey) {
-            if (modeKey != applied) { applied = modeKey; applyMode(modeKey.first) }
+            if (modeKey != applied) { applied = modeKey; applyMode(settings.desktopMode) }
         }
         val sending = (modeOverride ?: settings.desktopMode) == "source"
         // After an update: stop, give up the single-instance socket, then start the new copy.
@@ -388,22 +404,35 @@ fun sourceStatsText(s: SourceState): String = buildString {
     append("drift fixes   ${s.dropped} dropped, ${s.padded} padded")
 }
 
-/** First snapserver announced over mDNS, by its IPv4 address. */
 private const val DISCOVERY_RETRY_MS = 10_000L
 
-/** One mDNS search: each IPv4 interface is asked for `_snapcast._tcp` for up to 4 s. */
-internal fun discover(): ServerAddress? {
-    val addresses = java.net.NetworkInterface.getNetworkInterfaces().toList()
-        .filter { it.isUp && !it.isLoopback }
-        .flatMap { it.inetAddresses.toList() }
-        .filterIsInstance<Inet4Address>()
-    for (a in addresses) {
-        val found = runCatching {
-            JmDNS.create(a).use { dns ->
-                dns.list("_snapcast._tcp.local.", 4000).firstNotNullOfOrNull { i -> i.inet4Addresses.firstOrNull()?.let { it.hostAddress to i.port } }
+/** First snapserver announced over mDNS. */
+internal fun discover(): ServerAddress? = findServers().firstOrNull()?.address
+
+/**
+ * Every snapserver announced over mDNS, by its IPv4 address: each IPv4 interface is asked for
+ * `_snapcast._tcp` at once, for up to 4 s. Named by host ("steambox"), since snapserver calls
+ * itself "Snapcast" everywhere.
+ */
+internal fun findServers(): List<DiscoveredServer> {
+    val links = localNetworks()
+    val pool = java.util.concurrent.Executors.newFixedThreadPool(links.size.coerceAtLeast(1))
+    try {
+        return links.map { link ->
+            pool.submit<List<DiscoveredServer>> {
+                runCatching {
+                    JmDNS.create(link.address).use { dns ->
+                        dns.list("_snapcast._tcp.local.", 4000).mapNotNull { i ->
+                            // A host announces all its addresses on every network (Docker bridges
+                            // too): take the one on the network that heard it.
+                            val host = reachableAddress(i.inet4Addresses.toList(), listOf(link))?.hostAddress ?: return@mapNotNull null
+                            DiscoveredServer(i.server?.removeSuffix(".")?.removeSuffix(".local")?.takeIf { it.isNotBlank() } ?: i.name, host, i.port)
+                        }
+                    }
+                }.getOrDefault(emptyList())
             }
-        }.getOrNull()
-        if (found != null) return ServerAddress(Scheme.TCP, found.first, found.second)
+        }.flatMap { it.get() }.distinctBy { it.host to it.port }
+    } finally {
+        pool.shutdown()
     }
-    return null
 }
