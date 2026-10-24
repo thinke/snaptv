@@ -43,7 +43,7 @@ client side, so writing it ourselves is the smaller job.
 
 - A third mode next to Play and Send: **Serve**. Linux only, desktop only (n/a on Android);
   add the row to the parity table in `CLAUDE.md` when it lands.
-- If the laptop is the server, every room stops when it sleeps or leaves. So steambox stays the
+- If the laptop is the server, every room stops when it sleeps or leaves. So a dedicated server stays the
   normal server, and Serve only starts when no other server is found on the network. That also
   keeps two servers from competing for Automatic.
 - Ports as snapserver: 1704 clients, 1705 JSON-RPC (1780 Snapweb not planned).

@@ -35,7 +35,7 @@ data class RoomInfo(
     val streams: List<StreamInfo>,
     /** Every group and what it plays. */
     val groups: List<GroupInfo> = emptyList(),
-    /** The server machine's hostname as it reports it (e.g. "steambox"). */
+    /** The server machine's hostname as it reports it (e.g. "thinkedesktop"). */
     val serverHostName: String = "",
 )
 

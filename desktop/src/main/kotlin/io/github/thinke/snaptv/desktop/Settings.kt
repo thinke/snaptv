@@ -288,7 +288,7 @@ fun UpdatePrompt(updater: DesktopUpdater, state: UpdateState, onClose: () -> Uni
 }
 
 
-/** "steambox (fd3a::1)", or just the address while the name is unknown. */
+/** "thinkedesktop (fd3a::1)", or just the address while the name is unknown. */
 internal fun nameAndAddress(label: String, host: String) = if (label == host) host else "$label ($host)"
 
 /** What's new since the installed version, per release; scrolls with the mouse wheel when long. */

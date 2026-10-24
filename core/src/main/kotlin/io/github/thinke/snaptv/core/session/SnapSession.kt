@@ -53,7 +53,7 @@ data class PlayerState(
     val room: RoomInfo? = null,
     /** The decoder actually in use, e.g. "FFmpeg 6.0 (flac)". */
     val decoder: String? = null,
-    /** The server's own name for itself (e.g. "steambox"), once known; show it rather than the address. */
+    /** The server's own name for itself (e.g. "thinkedesktop"), once known; show it rather than the address. */
     val serverName: String? = null,
 ) {
     /** How to show the server: its name if we know it, else the address. */
@@ -133,7 +133,7 @@ class SnapSession(
 
     /**
      * How to show a server found at [host]: the name it reports for itself (the control API's
-     * host name, e.g. "steambox") once we've connected to it, else the address.
+     * host name, e.g. "thinkedesktop") once we've connected to it, else the address.
      */
     fun serverLabel(host: String): String = serverNames[host] ?: host
     private var sessionJob: Job? = null

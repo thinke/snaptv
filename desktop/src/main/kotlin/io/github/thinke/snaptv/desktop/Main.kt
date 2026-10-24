@@ -411,7 +411,7 @@ internal fun discover(): ServerAddress? = findServers().firstOrNull()?.address
 
 /**
  * Every snapserver announced over mDNS, by its IPv4 address: each IPv4 interface is asked for
- * `_snapcast._tcp` at once, for up to 4 s. Named by host ("steambox"), since snapserver calls
+ * `_snapcast._tcp` at once, for up to 4 s. Named by host ("thinkedesktop"), since snapserver calls
  * itself "Snapcast" everywhere.
  */
 internal fun findServers(): List<DiscoveredServer> {
